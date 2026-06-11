@@ -19,11 +19,16 @@ const DAY_SHIFT_MS = 8 * 3600 * 1000;
 const matchDayOf = (iso) =>
     parisDay(new Date(new Date(iso).getTime() - DAY_SHIFT_MS).toISOString());
 
-// GET → les matchs de la journée en cours (8h → 8h, heure de Paris)
-export async function GET() {
+// GET → les matchs d'une journée (8h → 8h, heure de Paris).
+// ?d=0 aujourd'hui (défaut), ?d=1 demain… jusqu'à +3 jours.
+export async function GET(request) {
     try {
+        const raw = new URL(request.url).searchParams.get("d");
+        const offset = Math.min(3, Math.max(0, parseInt(raw, 10) || 0));
         const events = await getEvents();
-        const today = matchDayOf(new Date().toISOString());
+        const today = matchDayOf(
+            new Date(Date.now() + offset * 24 * 3600 * 1000).toISOString()
+        );
         const matches = events
             .filter((e) => matchDayOf(e.commence_time) === today)
             .sort((a, b) => a.commence_time.localeCompare(b.commence_time))

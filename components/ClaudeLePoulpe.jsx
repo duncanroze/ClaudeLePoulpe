@@ -136,9 +136,9 @@ function todayLabel() {
 // Plus aucun prompt ni LLM : /api/matches et /api/analyze servent des cotes
 // réelles (The Odds API, cachées en BDD) et du calcul (dé-margeage + Poisson).
 
-// Étape 1 : liste des matchs du jour
-async function fetchTodayMatches() {
-    const data = await api("/api/matches");
+// Étape 1 : liste des matchs d'une journée (0 = aujourd'hui, 1 = demain…)
+async function fetchMatches(dayOffset = 0) {
+    const data = await api(`/api/matches?d=${dayOffset}`);
     return data.matches;
 }
 
@@ -693,7 +693,7 @@ function OracleTank({ match, onBack }) {
 
 // --------------------------- Liste des matchs ---------------------------
 
-function MatchList({ matches, onSelect }) {
+function MatchList({ matches, onSelect, dayLabel }) {
     if (matches.length === 0) {
         return (
             <div
@@ -702,10 +702,10 @@ function MatchList({ matches, onSelect }) {
             >
                 <div className="text-5xl">😴</div>
                 <div className="paul-display mt-3 text-lg font-semibold">
-                    Pas de match aujourd'hui
+                    Pas de match {dayLabel}
                 </div>
                 <div className="mt-1 text-sm" style={{ color: C.tealText }}>
-                    Claude fait la sieste dans son rocher. Repassez demain !
+                    Claude fait la sieste dans son rocher.
                 </div>
             </div>
         );
@@ -746,16 +746,22 @@ function MatchList({ matches, onSelect }) {
 
 // --------------------------- App ---------------------------
 
+const DAY_TABS = [
+    { offset: 0, label: "Aujourd'hui", empty: "aujourd'hui" },
+    { offset: 1, label: "Demain", empty: "demain" },
+];
+
 export default function ClaudeLePoulpe() {
     const [matches, setMatches] = useState(null);
     const [error, setError] = useState(null);
     const [selected, setSelected] = useState(null);
+    const [dayOffset, setDayOffset] = useState(0);
 
-    const load = async () => {
+    const load = async (offset = dayOffset) => {
         setError(null);
         setMatches(null);
         try {
-            const result = await fetchTodayMatches();
+            const result = await fetchMatches(offset);
             setMatches(Array.isArray(result) ? result : []);
         } catch (e) {
             console.error("Erreur oracle :", e);
@@ -763,8 +769,15 @@ export default function ClaudeLePoulpe() {
         }
     };
 
+    const selectDay = (offset) => {
+        if (offset === dayOffset) return;
+        setDayOffset(offset);
+        setSelected(null);
+        load(offset);
+    };
+
     useEffect(() => {
-        load();
+        load(0);
         bumpCounter("open");
     }, []);
 
@@ -791,6 +804,27 @@ export default function ClaudeLePoulpe() {
                 <OracleTank match={selected} onBack={() => setSelected(null)} />
             ) : (
                 <main className="pb-14">
+                    {/* Onglets de journée (les deux lisent le même cache : 0 appel API) */}
+                    <div className="mb-5 flex justify-center gap-2">
+                        {DAY_TABS.map((t) => (
+                            <button
+                                key={t.offset}
+                                onClick={() => selectDay(t.offset)}
+                                className="paul-display rounded-full px-5 py-2 text-sm font-semibold"
+                                style={{
+                                    border: `1px solid ${dayOffset === t.offset ? C.gold : C.tealSoft}`,
+                                    background:
+                                        dayOffset === t.offset
+                                            ? "rgba(244, 201, 93, 0.15)"
+                                            : "rgba(14, 74, 94, 0.5)",
+                                    color: dayOffset === t.offset ? C.gold : C.tealText,
+                                }}
+                            >
+                                {t.label}
+                            </button>
+                        ))}
+                    </div>
+
                     {matches === null && !error && (
                         <div className="mx-auto max-w-md text-center">
                             <div className="text-6xl">🐙</div>
@@ -831,7 +865,11 @@ export default function ClaudeLePoulpe() {
                     )}
 
                     {matches !== null && !error && (
-                        <MatchList matches={matches} onSelect={setSelected} />
+                        <MatchList
+                            matches={matches}
+                            onSelect={setSelected}
+                            dayLabel={DAY_TABS[dayOffset].empty}
+                        />
                     )}
                 </main>
             )}
