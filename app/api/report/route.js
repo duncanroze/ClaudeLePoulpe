@@ -8,8 +8,8 @@ import { isAuthorized, requireSecret } from "../../../lib/guard";
 // (hashée, jamais stockée en clair) et 12/jour au total — l'email ne part
 // que dans ces limites, donc pas de bombardement de boîte mail possible.
 
-const MAX_PER_IP_PER_DAY = 3;
-const MAX_PER_DAY = 12;
+const MAX_PER_IP_PER_DAY = 10;
+const MAX_PER_DAY = 100;
 
 function ipHash(request) {
     const ip = (request.headers.get("x-forwarded-for") || "?").split(",")[0].trim();
