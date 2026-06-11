@@ -326,7 +326,11 @@ export default function Bilan() {
                     icon="🛟"
                     label="Budget API aujourd'hui"
                     value={budget ? `${budget.used}/${budget.limit}` : "…"}
-                    sub="crédits The Odds API"
+                    sub={
+                        budget
+                            ? `${budget.monthUsed}/${budget.monthQuota} crédits ce mois-ci`
+                            : "crédits The Odds API"
+                    }
                 />
             </div>
             <div className="mt-3">
