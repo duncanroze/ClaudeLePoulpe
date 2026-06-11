@@ -185,9 +185,9 @@ async function api(path, options = {}) {
     return response.json();
 }
 
-async function bumpCounter(type) {
+async function bumpCounter(type, label) {
     try {
-        await api("/api/stats", { method: "POST", body: JSON.stringify({ type }) });
+        await api("/api/stats", { method: "POST", body: JSON.stringify({ type, label }) });
     } catch (e) {
         console.error("Tracking indisponible :", e);
     }
@@ -421,7 +421,7 @@ function OracleTank({ match, onBack }) {
             // Journal pour le bilan de fin de Mondial (BDD partagée)
             const bestPred = sortScores(result.topScores)[0];
             logPrediction(match, result, bestPred ? bestPred.score : null);
-            bumpCounter("go");
+            bumpCounter("go", `${match.home} vs ${match.away}`);
         } catch (e) {
             console.error("Erreur analyse :", e);
             setError(e.message || "Erreur inconnue");

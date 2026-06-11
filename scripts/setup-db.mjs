@@ -19,6 +19,8 @@ await sql`
         created_at timestamptz NOT NULL DEFAULT now()
     )`;
 await sql`CREATE INDEX IF NOT EXISTS events_type_idx ON poulpe.events (type, created_at)`;
+// Libellé optionnel : pour les "go", le match concerné
+await sql`ALTER TABLE poulpe.events ADD COLUMN IF NOT EXISTS label text`;
 
 // Une ligne par match prédit : la prédiction de Claude + le score réel
 // (rempli plus tard via "Vérifier les résultats réels")

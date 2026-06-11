@@ -343,6 +343,28 @@ export default function Bilan() {
                 <DailyChart daily={stats?.daily} />
             </div>
 
+            {/* GO par match */}
+            {stats?.byMatch?.length > 0 && (
+                <div className="mt-3 p-4" style={card}>
+                    <div
+                        className="bilan-display mb-2 text-xs font-semibold uppercase"
+                        style={{ letterSpacing: "0.1em", color: C.tealText }}
+                    >
+                        🔮 GO par match
+                    </div>
+                    <div className="flex flex-col gap-1">
+                        {stats.byMatch.map((m) => (
+                            <div key={m.label} className="flex items-center justify-between text-sm">
+                                <span className="bilan-display">{m.label}</span>
+                                <span className="bilan-display font-bold" style={{ color: C.gold }}>
+                                    {m.count}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {/* Stats des prédictions */}
             <div className="bilan-display mt-8 mb-2 text-sm font-semibold uppercase" style={{ letterSpacing: "0.15em", color: C.aqua }}>
                 Le poulpe vs la réalité
