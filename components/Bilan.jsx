@@ -33,6 +33,8 @@ const STYLE = `
 .bilan-fadeup { animation: fadeUp 0.5s ease-out both; }
 .bilan-btn { transition: transform 0.15s ease, filter 0.15s ease; }
 .bilan-btn:hover:not(:disabled) { transform: scale(1.04); filter: brightness(1.1); }
+.bilan-root button:not(:disabled), .bilan-root a { cursor: pointer; }
+.bilan-root button:disabled { cursor: not-allowed; }
 `;
 
 const card = {

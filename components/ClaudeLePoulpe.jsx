@@ -98,6 +98,9 @@ const STYLE = `
 .paul-dot    { animation: dotPulse 1.2s infinite; }
 .paul-bar    { animation: barGrow 1s ease-out both; }
 
+.paul-root button:not(:disabled) { cursor: pointer; }
+.paul-root button:disabled { cursor: not-allowed; }
+
 .paul-fab-tip { opacity: 0; transform: translateX(6px); transition: opacity 0.2s ease, transform 0.2s ease; pointer-events: none; }
 .paul-fab:hover ~ .paul-fab-tip, .paul-fab:focus-visible ~ .paul-fab-tip { opacity: 1; transform: translateX(0); }
 
