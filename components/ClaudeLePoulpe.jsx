@@ -1,0 +1,1127 @@
+"use client";
+
+import { useState, useEffect, useRef } from "react";
+
+// ---------------------------------------------------------------
+// CLAUDE LE POULPE — L'Oracle du Mondial 2026
+// Étape 1 : liste les matchs du jour (cotes 1N2 des bookmakers).
+// Étape 2 : au "GO", analyse approfondie multi-sources du match
+// (cotes de plusieurs bookmakers avec marge retirée, forme récente,
+// face-à-face, contexte, absences, modèles statistiques) pour
+// estimer les probabilités les plus plausibles et le score exact
+// le plus probable. Aucun conseil de pari : uniquement ce qui a le
+// plus de chances de se produire.
+// Les appels à l'oracle passent par /api/oracle (clé côté serveur)
+// et les stats/journal sont stockés en BDD via /api/stats et
+// /api/predictions.
+// ---------------------------------------------------------------
+
+const C = {
+    abyss: "#04222e",
+    water: "#0e4a5e",
+    aqua: "#2dd4bf",
+    foam: "#e8f6f3",
+    coral: "#ff7a59",
+    gold: "#f4c95d",
+    tealSoft: "rgba(45, 212, 191, 0.25)",
+    tealText: "rgba(190, 235, 228, 0.75)",
+};
+
+const STYLE = `
+@import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@400;600;700;800&display=swap');
+
+.paul-root {
+    font-family: 'Nunito', system-ui, sans-serif;
+    color: ${C.foam};
+    min-height: 100vh;
+    background:
+        radial-gradient(1200px 600px at 50% -10%, #11586e 0%, transparent 60%),
+        linear-gradient(180deg, #06303f 0%, ${C.abyss} 70%);
+}
+.paul-display { font-family: 'Fredoka', 'Nunito', sans-serif; }
+
+@keyframes paulFloat {
+    0%, 100% { transform: translate(-50%, -50%) translateY(0) rotate(-2deg); }
+    50%      { transform: translate(-50%, -50%) translateY(-10px) rotate(2deg); }
+}
+@keyframes paulThink {
+    0%   { transform: translate(-50%, -50%) rotate(0deg) scale(1); }
+    20%  { transform: translate(-50%, -50%) rotate(-14deg) scale(1.06); }
+    40%  { transform: translate(-50%, -50%) rotate(12deg) scale(0.96); }
+    60%  { transform: translate(-50%, -50%) rotate(-10deg) scale(1.08); }
+    80%  { transform: translate(-50%, -50%) rotate(8deg) scale(0.98); }
+    100% { transform: translate(-50%, -50%) rotate(0deg) scale(1); }
+}
+@keyframes paulLand {
+    0%   { transform: translate(-50%, -50%) scale(1.25, 0.75); }
+    40%  { transform: translate(-50%, -50%) scale(0.85, 1.15); }
+    70%  { transform: translate(-50%, -50%) scale(1.08, 0.92); }
+    100% { transform: translate(-50%, -50%) scale(1, 1); }
+}
+@keyframes bubbleRise {
+    0%   { transform: translateY(0) scale(0.6); opacity: 0; }
+    15%  { opacity: 0.7; }
+    100% { transform: translateY(-340px) scale(1.15); opacity: 0; }
+}
+@keyframes fadeUp {
+    from { opacity: 0; transform: translateY(14px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes popIn {
+    0%   { opacity: 0; transform: translate(-50%, 10px) scale(0.5); }
+    70%  { transform: translate(-50%, -4px) scale(1.1); }
+    100% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+@keyframes boxGlow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(244, 201, 93, 0); }
+    50%      { box-shadow: 0 0 34px 6px rgba(244, 201, 93, 0.45); }
+}
+@keyframes seaweedSway {
+    0%, 100% { transform: rotate(-4deg); }
+    50%      { transform: rotate(5deg); }
+}
+@keyframes dotPulse {
+    0%, 80%, 100% { opacity: 0.25; }
+    40% { opacity: 1; }
+}
+@keyframes barGrow {
+    from { width: 0; }
+}
+
+.paul-octopus { transition: left 1.6s cubic-bezier(0.45, 0, 0.25, 1), top 1.6s cubic-bezier(0.45, 0, 0.25, 1); }
+.paul-octopus.idle     { animation: paulFloat 3.2s ease-in-out infinite; }
+.paul-octopus.thinking { animation: paulThink 0.8s ease-in-out infinite; }
+.paul-octopus.landed   { animation: paulLand 0.7s ease-out 1; }
+
+.paul-bubble { animation: bubbleRise linear infinite; }
+.paul-fadeup { animation: fadeUp 0.5s ease-out both; }
+.paul-popin  { animation: popIn 0.5s ease-out both; }
+.paul-glow   { animation: boxGlow 1.6s ease-in-out infinite; }
+.paul-weed   { animation: seaweedSway 4s ease-in-out infinite; transform-origin: bottom center; }
+.paul-dot    { animation: dotPulse 1.2s infinite; }
+.paul-bar    { animation: barGrow 1s ease-out both; }
+
+.paul-card { transition: transform 0.18s ease, border-color 0.18s ease; }
+.paul-card:hover { transform: translateY(-3px); border-color: ${C.aqua} !important; }
+.paul-go { transition: transform 0.15s ease, filter 0.15s ease; }
+.paul-go:hover:not(:disabled) { transform: scale(1.05); filter: brightness(1.1); }
+.paul-go:active:not(:disabled) { transform: scale(0.97); }
+
+@media (prefers-reduced-motion: reduce) {
+    .paul-root * { animation: none !important; transition-duration: 0.05s !important; }
+}
+`;
+
+// Positions du poulpe dans le bassin (en %)
+const SPOTS = {
+    idle: { left: 50, top: 34 },
+    home: { left: 18, top: 56 },
+    away: { left: 82, top: 56 },
+    draw: { left: 50, top: 70 },
+};
+
+const OUTCOME_LABEL = {
+    home: (m) => `Victoire ${m.home}`,
+    away: (m) => `Victoire ${m.away}`,
+    draw: () => "Match nul",
+};
+
+const JSON_RULES = `RÈGLES JSON STRICTES : utilise le POINT comme séparateur décimal pour toutes les cotes et probabilités (1.46, JAMAIS 1,46) ; aucune virgule finale avant } ou ] ; uniquement des guillemets doubles ; pas de retour à la ligne à l'intérieur des chaînes ; pas de guillemets doubles à l'intérieur des textes (utilise des apostrophes).`;
+
+function todayLabel() {
+    return new Date().toLocaleDateString("fr-FR", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+    });
+}
+
+// --------------------------- Appels à l'oracle ---------------------------
+
+function tryParse(s) {
+    try {
+        return JSON.parse(s);
+    } catch {
+        return undefined;
+    }
+}
+
+function parseJsonBlock(text, open, close) {
+    const clean = text.replace(/```json|```/g, "").trim();
+    const start = clean.indexOf(open);
+    const end = clean.lastIndexOf(close);
+    if (start === -1 || end === -1) throw new Error("Réponse illisible");
+    const slice = clean.slice(start, end + 1);
+
+    let parsed = tryParse(slice);
+    if (parsed === undefined) {
+        // Réparations courantes : virgules décimales françaises (1,46 → 1.46)
+        // et virgules finales avant } ou ]
+        const fixed = slice
+            .replace(/(\d),(\d)/g, "$1.$2")
+            .replace(/,\s*([}\]])/g, "$1");
+        parsed = tryParse(fixed);
+    }
+    if (parsed === undefined) throw new Error("JSON invalide renvoyé par l'oracle");
+    return parsed;
+}
+
+async function callOracle(prompt) {
+    const response = await fetch("/api/oracle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+    });
+
+    if (!response.ok) {
+        const detail = await response.json().catch(() => ({}));
+        throw new Error(detail.error || `Erreur API (${response.status})`);
+    }
+    const data = await response.json();
+
+    if (data.stopReason === "max_tokens") {
+        // Réponse coupée en plein milieu du JSON : on relancera l'oracle
+        throw new Error("Réponse de l'oracle tronquée");
+    }
+
+    return data.text || "";
+}
+
+async function withRetry(fn, attempts = 2) {
+    let lastError = null;
+    for (let i = 0; i < attempts; i++) {
+        try {
+            return await fn();
+        } catch (e) {
+            lastError = e;
+        }
+    }
+    throw lastError;
+}
+
+// Étape 1 : liste des matchs du jour (rapide)
+async function fetchTodayMatches() {
+    const dateFr = todayLabel();
+    const prompt = `Nous sommes le ${dateFr}. Recherche sur le web la liste des matchs de la Coupe du monde de football 2026 qui se jouent AUJOURD'HUI (${dateFr}), avec les cotes 1N2 des sites de paris sportifs (Unibet, Winamax, Betclic, Bet365...).
+
+Réponds UNIQUEMENT avec un tableau JSON valide, sans markdown, sans backticks, sans aucun texte avant ou après, au format exact :
+[{"home":"Nom équipe domicile","away":"Nom équipe extérieur","homeCode":"code pays ISO alpha-2 en minuscules (ex: mx)","awayCode":"code ISO alpha-2 (ex: za)","time":"heure française HH:MM","stadium":"nom du stade","odds":{"home":cote,"draw":cote,"away":cote}}]
+
+Si aucun match n'est prévu aujourd'hui, réponds exactement : []
+
+${JSON_RULES}`;
+
+    return withRetry(async () => parseJsonBlock(await callOracle(prompt), "[", "]"));
+}
+
+// Étape 2 : analyse approfondie multi-sources d'un match (au "GO")
+const analysisCache = new Map();
+
+async function analyzeMatch(match) {
+    const key = `${match.home}-${match.away}`;
+    if (analysisCache.has(key)) return analysisCache.get(key);
+
+    const dateFr = todayLabel();
+    const prompt = `Nous sommes le ${dateFr}. Analyse le match de Coupe du monde 2026 : ${match.home} vs ${match.away} (${match.time}, ${match.stadium}).
+
+OBJECTIF : estimer les probabilités les plus PLAUSIBLES du résultat réel et le score exact le plus PROBABLE. PAS de conseil en paris : ignore bonus, promos, value bets et conseils de pronostiqueurs orientés gain.
+
+CONTRAINTES DE RAPIDITÉ TRÈS IMPORTANTES : fais au MAXIMUM 3 recherches web ciblées (ex: "${match.home} ${match.away} cotes pronostic", "${match.home} ${match.away} score exact cote", "${match.home} ${match.away} compos absents"). N'écris AUCUN texte avant, entre ou après tes recherches : ta SEULE sortie texte doit être l'objet JSON final, rien d'autre.
+
+MÉTHODE :
+1. Relève les cotes 1N2 de plusieurs bookmakers et convertis-les en probabilités dé-margées : p(issue) = (1/cote_issue) / (1/cote_dom + 1/cote_nul + 1/cote_ext), puis fais la moyenne entre bookmakers.
+2. Note au passage : forme récente, face-à-face, contexte (domicile, altitude, classement FIFA) et absences.
+3. Cotes "score exact" réelles uniquement si tu les trouves — n'invente JAMAIS une cote, mets null sinon. Cote la plus basse = score le plus probable (ne pas confondre avec les conseils de pronostiqueurs, souvent à cote élevée pour le gain).
+
+ANCRAGE : les cotes des bookmakers intègrent déjà la forme, les absences et le contexte. Tes probabilités finales 1N2 = la moyenne dé-margée des bookmakers, ajustable de ±3 points MAXIMUM, uniquement sur info forte très récente pas encore intégrée dans les cotes (ex: blessure de dernière minute). Les éléments qualitatifs servent à EXPLIQUER la prédiction. La somme des 3 probabilités doit faire exactement 100. Les 3 scores les plus probables sont triés du plus probable au moins probable, le n°1 cohérent avec l'issue la plus probable.
+
+Réponds UNIQUEMENT avec un objet JSON valide, sans markdown, sans backticks, sans aucun texte avant ou après, au format exact (chaque detail et le comment doivent être COURTS, 12 mots maximum) :
+{"prediction":"home" ou "draw" ou "away","probabilities":{"home":entier,"draw":entier,"away":entier},"topScores":[{"score":"X-Y","probability":entier en %,"scoreOdds":cote réelle ou null}],"factors":[{"label":"Cotes bookmakers","detail":"court"},{"label":"Forme récente","detail":"court"},{"label":"Face-à-face","detail":"court"},{"label":"Contexte","detail":"court"},{"label":"Absences","detail":"court"}],"confidence":"haute" ou "moyenne" ou "basse","comment":"synthèse sportive courte, INTERDIT de mentionner pari, mise, gain ou bonus"}
+
+${JSON_RULES}`;
+
+    const result = await withRetry(async () =>
+        parseJsonBlock(await callOracle(prompt), "{", "}")
+    );
+    analysisCache.set(key, result);
+    return result;
+}
+
+// --------------------------- Mémoire persistante (stats & journal) ---------------------------
+// Stockage partagé entre tous les visiteurs du site : compteurs
+// d'utilisation + journal des prédictions pour le bilan de fin de Mondial.
+// Le tout vit dans la BDD Postgres (Neon) derrière les routes /api.
+
+const slug = (s) =>
+    String(s).normalize("NFD").replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+
+const sortScores = (arr) =>
+    [...(Array.isArray(arr) ? arr : [])].sort(
+        (x, y) =>
+            (y.probability ?? 0) - (x.probability ?? 0) ||
+            (x.scoreOdds ?? Infinity) - (y.scoreOdds ?? Infinity)
+    );
+
+function outcomeOf(score) {
+    const [h, a] = String(score || "").split("-").map(Number);
+    if (Number.isNaN(h) || Number.isNaN(a)) return null;
+    return h > a ? "home" : h < a ? "away" : "draw";
+}
+
+async function api(path, options) {
+    const response = await fetch(path, {
+        headers: { "Content-Type": "application/json" },
+        ...options,
+    });
+    if (!response.ok) throw new Error(`Erreur serveur (${response.status})`);
+    return response.json();
+}
+
+async function bumpCounter(type) {
+    try {
+        await api("/api/stats", { method: "POST", body: JSON.stringify({ type }) });
+    } catch (e) {
+        console.error("Tracking indisponible :", e);
+    }
+}
+
+async function logPrediction(match, analysis, predictedScore) {
+    try {
+        const day = new Date().toISOString().slice(0, 10);
+        const id = `${day}-${slug(match.home)}-${slug(match.away)}`;
+        await api("/api/predictions", {
+            method: "POST",
+            body: JSON.stringify({
+                id,
+                day,
+                home: match.home,
+                away: match.away,
+                time: match.time,
+                prediction: analysis.prediction,
+                probabilities: analysis.probabilities,
+                predictedScore: predictedScore || null,
+                confidence: analysis.confidence,
+            }),
+        });
+    } catch (e) {
+        console.error("Journal indisponible :", e);
+    }
+}
+
+// Va chercher les scores réels des matchs journalisés pas encore vérifiés
+async function verifyResults(entries) {
+    const pending = (entries || []).filter((e) => !e.actualScore).slice(0, 10);
+    if (pending.length === 0) return null;
+    const dateFr = todayLabel();
+    const listing = pending
+        .map((e) => `{"id":"${e.id}","match":"${e.home} vs ${e.away}","date":"${e.day}"}`)
+        .join(",");
+    const prompt = `Nous sommes le ${dateFr}. Voici des matchs de la Coupe du monde 2026 : [${listing}]. Recherche sur le web le score FINAL réel de chaque match (temps réglementaire + prolongation éventuelle, hors tirs au but). N'écris aucun texte en dehors du JSON. Réponds UNIQUEMENT avec un tableau JSON valide, sans markdown, sans backticks : [{"id":"identifiant fourni tel quel","actualScore":"X-Y" (X = buts de la première équipe citée dans match) ou null si le match n'est pas encore terminé}]
+
+${JSON_RULES}`;
+    return withRetry(async () => parseJsonBlock(await callOracle(prompt), "[", "]"));
+}
+
+// --------------------------- Drapeau ---------------------------
+
+function Flag({ code, name, size = 56 }) {
+    const [srcIndex, setSrcIndex] = useState(0);
+    const sources = code
+        ? [
+              `https://flagcdn.com/w160/${code.toLowerCase()}.png`,
+              `https://flagsapi.com/${code.toUpperCase()}/flat/64.png`,
+          ]
+        : [];
+
+    if (!code || srcIndex >= sources.length) {
+        return (
+            <span
+                className="paul-display inline-flex items-center justify-center font-bold"
+                style={{
+                    width: size,
+                    height: size * 0.72,
+                    fontSize: size * 0.34,
+                    borderRadius: 8,
+                    letterSpacing: "0.05em",
+                    color: C.abyss,
+                    background: `linear-gradient(135deg, ${C.aqua}, ${C.gold})`,
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
+                }}
+            >
+                {(code || "?").toUpperCase()}
+            </span>
+        );
+    }
+    return (
+        <img
+            src={sources[srcIndex]}
+            alt={`Drapeau ${name}`}
+            onError={() => setSrcIndex((i) => i + 1)}
+            style={{
+                width: size,
+                height: "auto",
+                borderRadius: 6,
+                boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
+            }}
+        />
+    );
+}
+
+// --------------------------- Décor ---------------------------
+
+function Bubbles({ count = 7, burst = false }) {
+    const bubbles = Array.from({ length: burst ? 16 : count });
+    return (
+        <>
+            {bubbles.map((_, i) => (
+                <div
+                    key={i}
+                    className="paul-bubble absolute rounded-full"
+                    style={{
+                        left: `${8 + ((i * 37) % 85)}%`,
+                        bottom: "-20px",
+                        width: `${8 + ((i * 13) % 16)}px`,
+                        height: `${8 + ((i * 13) % 16)}px`,
+                        border: "1px solid rgba(180, 230, 222, 0.4)",
+                        background: "rgba(200, 240, 235, 0.08)",
+                        animationDuration: `${(burst ? 2.2 : 5) + ((i * 7) % 40) / 10}s`,
+                        animationDelay: `${((i * 11) % 30) / 10}s`,
+                    }}
+                />
+            ))}
+        </>
+    );
+}
+
+function Seaweed() {
+    return (
+        <div className="absolute bottom-0 left-0 right-0 flex justify-between px-6 pointer-events-none">
+            {["🌿", "🪸", "🌿", "🪸", "🌿"].map((p, i) => (
+                <span
+                    key={i}
+                    className="paul-weed text-3xl"
+                    style={{ opacity: 0.5, animationDelay: `${i * 0.6}s` }}
+                >
+                    {p}
+                </span>
+            ))}
+        </div>
+    );
+}
+
+function FlagBox({ code, name, label, highlight, pos }) {
+    return (
+        <div
+            className="flex flex-col items-center gap-2"
+            style={{
+                position: "absolute",
+                left: `${pos.left}%`,
+                top: `${pos.top}%`,
+                transform: "translateX(-50%)",
+                width: 120,
+            }}
+        >
+            <div
+                className={`paul-display flex items-center justify-center rounded-xl ${highlight ? "paul-glow" : ""}`}
+                style={{
+                    width: 96,
+                    height: 76,
+                    border: `2px solid ${highlight ? C.gold : C.tealSoft}`,
+                    background: highlight ? "rgba(244, 201, 93, 0.15)" : "rgba(14, 74, 94, 0.7)",
+                    backdropFilter: "blur(2px)",
+                    fontSize: 38,
+                }}
+            >
+                {code ? <Flag code={code} name={name} /> : label}
+            </div>
+            <span
+                className="paul-display text-sm font-semibold text-center"
+                style={{ lineHeight: 1.15 }}
+            >
+                {name}
+            </span>
+        </div>
+    );
+}
+
+function ProbBar({ label, value, color }) {
+    return (
+        <div className="flex items-center gap-2">
+            <span className="paul-display text-xs font-semibold" style={{ width: 110, textAlign: "right" }}>
+                {label}
+            </span>
+            <div
+                className="flex-1 rounded-full overflow-hidden"
+                style={{ height: 14, background: "rgba(4, 34, 46, 0.6)" }}
+            >
+                <div
+                    className="paul-bar h-full rounded-full"
+                    style={{ width: `${value}%`, background: color }}
+                />
+            </div>
+            <span className="paul-display text-xs font-bold" style={{ width: 38 }}>
+                {value}%
+            </span>
+        </div>
+    );
+}
+
+// --------------------------- Bassin de l'oracle ---------------------------
+
+const THINKING_LINES = [
+    "Claude épluche les cotes de plusieurs bookmakers…",
+    "Claude étudie la forme des deux équipes…",
+    "Claude relit les confrontations directes…",
+    "Claude vérifie les absents et le contexte…",
+    "Claude croise le tout dans ses 8 tentacules…",
+];
+
+function OracleTank({ match, onBack }) {
+    // phase: idle → thinking (analyse réelle) → swim → landed | error
+    const [phase, setPhase] = useState("idle");
+    const [spot, setSpot] = useState(SPOTS.idle);
+    const [showScore, setShowScore] = useState(false);
+    const [analysis, setAnalysis] = useState(null);
+    const [error, setError] = useState(null);
+    const [thinkLine, setThinkLine] = useState(0);
+    const timers = useRef([]);
+
+    useEffect(() => () => timers.current.forEach(clearTimeout), []);
+    const later = (fn, ms) => timers.current.push(setTimeout(fn, ms));
+
+    const choreography = (result) => {
+        if (result.prediction === "draw") {
+            // Hésitation : il tâte les deux boîtes puis se pose au centre
+            setPhase("swim");
+            setSpot(SPOTS.home);
+            later(() => setSpot(SPOTS.away), 1700);
+            later(() => setSpot(SPOTS.draw), 3400);
+            later(() => setPhase("landed"), 5100);
+            later(() => setShowScore(true), 5700);
+        } else {
+            setPhase("swim");
+            setSpot(SPOTS[result.prediction]);
+            later(() => setPhase("landed"), 1700);
+            later(() => setShowScore(true), 2300);
+        }
+    };
+
+    const launch = async () => {
+        if (phase !== "idle") return;
+        setError(null);
+        setPhase("thinking");
+
+        // Fait défiler les étapes d'analyse pendant la vraie réflexion
+        THINKING_LINES.forEach((_, i) => later(() => setThinkLine(i), i * 2600));
+
+        try {
+            const result = await analyzeMatch(match);
+            setAnalysis(result);
+            choreography(result);
+            // Journal pour le bilan de fin de Mondial (BDD partagée)
+            const bestPred = sortScores(result.topScores)[0];
+            logPrediction(match, result, bestPred ? bestPred.score : null);
+            bumpCounter("go");
+        } catch (e) {
+            console.error("Erreur analyse :", e);
+            setError(e.message || "Erreur inconnue");
+            setPhase("idle");
+            setSpot(SPOTS.idle);
+        }
+    };
+
+    const reset = () => {
+        timers.current.forEach(clearTimeout);
+        timers.current = [];
+        setSpot(SPOTS.idle);
+        setShowScore(false);
+        setThinkLine(0);
+        setPhase("idle");
+    };
+
+    const done = phase === "landed";
+    const a = analysis;
+    const predLabel = done && a ? OUTCOME_LABEL[a.prediction](match) : "";
+    // Tri par probabilité décroissante (et cote croissante en secours) :
+    // le plus probable est toujours en n°1, même si l'oracle se trompe d'ordre.
+    const topScores = done && a ? sortScores(a.topScores) : [];
+    const best = topScores[0];
+    const score = best ? (best.score || "?-?").replace("-", " - ") : "?-?";
+    const probs = a?.probabilities || {};
+
+    return (
+        <div className="paul-fadeup mx-auto w-full max-w-2xl px-4 pb-12">
+            <button
+                onClick={onBack}
+                className="paul-display mb-4 text-sm"
+                style={{ color: C.aqua }}
+            >
+                ← Retour aux matchs du jour
+            </button>
+
+            <div className="mb-3 text-center">
+                <div className="paul-display text-xl font-semibold flex items-center justify-center gap-3 flex-wrap">
+                    <Flag code={match.homeCode} name={match.home} size={34} />
+                    {match.home} <span style={{ color: C.aqua }}>vs</span> {match.away}
+                    <Flag code={match.awayCode} name={match.away} size={34} />
+                </div>
+                <div className="text-sm" style={{ color: C.tealText }}>
+                    {match.time} · {match.stadium}
+                </div>
+            </div>
+
+            {/* Le bassin */}
+            <div
+                className="relative overflow-hidden"
+                style={{
+                    height: 440,
+                    borderRadius: 24,
+                    border: `2px solid ${C.tealSoft}`,
+                    background:
+                        "linear-gradient(180deg, rgba(20,90,110,0.55) 0%, rgba(8,50,64,0.85) 70%, rgba(5,35,46,1) 100%)",
+                    boxShadow: "inset 0 0 60px rgba(0,0,0,0.45)",
+                }}
+            >
+                <div
+                    className="absolute left-0 right-0 top-0"
+                    style={{ height: 40, background: "linear-gradient(180deg, rgba(220,245,240,0.15), transparent)" }}
+                />
+                <Bubbles burst={phase === "thinking"} />
+                <Seaweed />
+
+                <FlagBox
+                    code={match.homeCode}
+                    name={match.home}
+                    pos={{ left: SPOTS.home.left, top: 48 }}
+                    highlight={done && a?.prediction === "home"}
+                />
+                <FlagBox
+                    code={match.awayCode}
+                    name={match.away}
+                    pos={{ left: SPOTS.away.left, top: 48 }}
+                    highlight={done && a?.prediction === "away"}
+                />
+                <FlagBox
+                    label="🤝"
+                    name="Nul"
+                    pos={{ left: SPOTS.draw.left, top: 62 }}
+                    highlight={done && a?.prediction === "draw"}
+                />
+
+                {/* Claude le Poulpe */}
+                <div
+                    className={`paul-octopus absolute text-7xl ${
+                        phase === "idle" ? "idle" : phase === "thinking" ? "thinking" : done ? "landed" : ""
+                    }`}
+                    style={{
+                        left: `${spot.left}%`,
+                        top: `${spot.top}%`,
+                        transform: "translate(-50%, -50%)",
+                        zIndex: 10,
+                        filter: "drop-shadow(0 6px 8px rgba(0,0,0,0.4))",
+                    }}
+                >
+                    🐙
+                </div>
+
+                {/* Pancarte du score exact */}
+                {showScore && (
+                    <div
+                        className="paul-popin paul-display absolute font-bold text-2xl"
+                        style={{
+                            left: `${spot.left}%`,
+                            top: `${spot.top - 17}%`,
+                            transform: "translateX(-50%)",
+                            zIndex: 11,
+                            background: C.foam,
+                            color: C.abyss,
+                            padding: "6px 18px",
+                            borderRadius: 14,
+                            border: `3px solid ${C.gold}`,
+                            boxShadow: "0 6px 16px rgba(0,0,0,0.45)",
+                        }}
+                    >
+                        {score}
+                    </div>
+                )}
+
+                {/* Bulles de pensée : étapes réelles de l'analyse */}
+                {phase === "thinking" && (
+                    <div
+                        className="paul-display absolute text-sm font-semibold text-center"
+                        style={{
+                            left: "50%", top: "8%", transform: "translateX(-50%)",
+                            background: C.foam, color: C.abyss, maxWidth: "85%",
+                            padding: "6px 16px", borderRadius: 999, zIndex: 12,
+                        }}
+                    >
+                        {THINKING_LINES[Math.min(thinkLine, THINKING_LINES.length - 1)]}
+                    </div>
+                )}
+                {phase === "swim" && a?.prediction === "draw" && (
+                    <div
+                        className="paul-fadeup paul-display absolute text-sm font-semibold"
+                        style={{
+                            left: "50%", top: "8%", transform: "translateX(-50%)",
+                            background: C.foam, color: C.abyss,
+                            padding: "6px 16px", borderRadius: 999, zIndex: 12,
+                        }}
+                    >
+                        Hmm… il hésite ! 🤔
+                    </div>
+                )}
+            </div>
+
+            {/* Commande / erreur / résultat */}
+            <div className="mt-5 flex flex-col items-center gap-4">
+                {error && (
+                    <div
+                        className="paul-fadeup w-full p-4 text-center text-sm"
+                        style={{
+                            borderRadius: 14,
+                            border: "1px solid rgba(255, 122, 89, 0.4)",
+                            background: "rgba(255, 122, 89, 0.1)",
+                        }}
+                    >
+                        🌊 L'analyse a été emportée par le courant ({error}). Réessaie !
+                    </div>
+                )}
+
+                {!done && (
+                    <button
+                        onClick={launch}
+                        disabled={phase !== "idle"}
+                        className="paul-go paul-display rounded-full px-12 py-4 text-2xl font-bold"
+                        style={{
+                            color: C.abyss,
+                            background: `linear-gradient(135deg, ${C.gold}, ${C.coral})`,
+                            opacity: phase === "idle" ? 1 : 0.55,
+                        }}
+                    >
+                        {phase === "idle" ? "GO 🐙" : "Analyse en cours…"}
+                    </button>
+                )}
+
+                {done && a && (
+                    <div
+                        className="paul-fadeup w-full p-5"
+                        style={{
+                            borderRadius: 18,
+                            border: `1px solid ${C.tealSoft}`,
+                            background: "rgba(14, 74, 94, 0.6)",
+                        }}
+                    >
+                        <div className="text-center">
+                            <div className="paul-display text-lg font-bold" style={{ color: C.gold }}>
+                                🔮 Claude a parlé : {predLabel}
+                            </div>
+                            <div className="paul-display mt-2 text-3xl font-bold">
+                                {match.home} {score} {match.away}
+                            </div>
+                            {a.confidence && (
+                                <div
+                                    className="paul-display inline-block mt-2 px-3 py-1 text-xs font-semibold rounded-full"
+                                    style={{ border: `1px solid ${C.tealSoft}`, color: C.tealText }}
+                                >
+                                    Fiabilité de l'analyse : {a.confidence}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Probabilités croisées 1N2 */}
+                        <div className="mt-4 flex flex-col gap-2">
+                            <ProbBar label={match.home} value={probs.home ?? 0} color={C.aqua} />
+                            <ProbBar label="Nul" value={probs.draw ?? 0} color={C.tealText} />
+                            <ProbBar label={match.away} value={probs.away ?? 0} color={C.coral} />
+                        </div>
+
+                        {/* Podium des scores */}
+                        {topScores.length > 0 && (
+                            <div className="mt-4 flex justify-center gap-2 flex-wrap">
+                                {topScores.map((s, i) => (
+                                    <div
+                                        key={i}
+                                        className="paul-display px-3 py-2 text-sm font-semibold"
+                                        style={{
+                                            borderRadius: 12,
+                                            border: `1px solid ${i === 0 ? C.gold : C.tealSoft}`,
+                                            background: i === 0 ? "rgba(244, 201, 93, 0.12)" : "rgba(4, 34, 46, 0.5)",
+                                            color: i === 0 ? C.gold : C.foam,
+                                        }}
+                                    >
+                                        {["🥇", "🥈", "🥉"][i]} {s.score}
+                                        <span style={{ opacity: 0.7, fontWeight: 400 }}>
+                                            {s.probability != null ? ` ~${s.probability}%` : ""}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Les sources croisées */}
+                        {Array.isArray(a.factors) && a.factors.length > 0 && (
+                            <div className="mt-4 flex flex-col gap-2">
+                                {a.factors.map((f, i) => (
+                                    <div key={i} className="text-sm flex gap-2">
+                                        <span
+                                            className="paul-display font-semibold shrink-0"
+                                            style={{ color: C.aqua, minWidth: 130 }}
+                                        >
+                                            {["📊", "📈", "🤝", "🏟️", "🏥", "🧮"][i] || "•"} {f.label}
+                                        </span>
+                                        <span style={{ color: "rgba(210, 240, 235, 0.85)" }}>{f.detail}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {a.comment && (
+                            <div className="mt-3 text-sm italic text-center" style={{ color: C.tealText }}>
+                                « {a.comment} »
+                            </div>
+                        )}
+
+                        <div className="text-center">
+                            <button
+                                onClick={reset}
+                                className="paul-display mt-4 rounded-full px-6 py-2 text-sm font-semibold"
+                                style={{ border: `1px solid ${C.tealSoft}`, color: C.foam }}
+                            >
+                                Rejouer l'oracle
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// --------------------------- Liste des matchs ---------------------------
+
+function MatchList({ matches, onSelect }) {
+    if (matches.length === 0) {
+        return (
+            <div
+                className="paul-fadeup mx-auto max-w-md p-8 text-center"
+                style={{ borderRadius: 18, border: `1px solid ${C.tealSoft}`, background: "rgba(14, 74, 94, 0.5)" }}
+            >
+                <div className="text-5xl">😴</div>
+                <div className="paul-display mt-3 text-lg font-semibold">
+                    Pas de match aujourd'hui
+                </div>
+                <div className="mt-1 text-sm" style={{ color: C.tealText }}>
+                    Claude fait la sieste dans son rocher. Repassez demain !
+                </div>
+            </div>
+        );
+    }
+    return (
+        <div className="mx-auto grid w-full max-w-2xl gap-3 px-4">
+            {matches.map((m, i) => (
+                <button
+                    key={i}
+                    onClick={() => onSelect(m)}
+                    className="paul-card paul-fadeup flex items-center justify-between px-5 py-4 text-left"
+                    style={{
+                        borderRadius: 18,
+                        border: `1px solid ${C.tealSoft}`,
+                        background: "rgba(14, 74, 94, 0.5)",
+                        animationDelay: `${i * 0.08}s`,
+                    }}
+                >
+                    <div className="flex items-center gap-3 flex-wrap">
+                        <span
+                            className="paul-display rounded-lg px-2 py-1 text-sm font-semibold"
+                            style={{ background: "rgba(4, 34, 46, 0.6)", color: C.gold }}
+                        >
+                            {m.time}
+                        </span>
+                        <Flag code={m.homeCode} name={m.home} size={34} />
+                        <span className="paul-display font-semibold">
+                            {m.home} <span style={{ color: C.aqua }}>vs</span> {m.away}
+                        </span>
+                        <Flag code={m.awayCode} name={m.away} size={34} />
+                    </div>
+                    <span className="text-2xl">🐙</span>
+                </button>
+            ))}
+        </div>
+    );
+}
+
+// --------------------------- Le bilan du poulpe ---------------------------
+
+function StatsView({ onBack }) {
+    const [counters, setCounters] = useState(null);
+    const [entries, setEntries] = useState(null);
+    const [checking, setChecking] = useState(false);
+    const [notice, setNotice] = useState(null);
+
+    const refresh = async () => {
+        try {
+            const [stats, predictions] = await Promise.all([
+                api("/api/stats"),
+                api("/api/predictions"),
+            ]);
+            setCounters(stats.counters || {});
+            setEntries(predictions.entries || []);
+        } catch (e) {
+            console.error("Erreur bilan :", e);
+            setCounters({});
+            setEntries([]);
+            setNotice("Impossible de charger le bilan, réessaie plus tard.");
+        }
+    };
+
+    useEffect(() => {
+        refresh();
+    }, []);
+
+    const check = async () => {
+        setChecking(true);
+        setNotice(null);
+        try {
+            const results = await verifyResults(entries);
+            if (!results) {
+                setNotice("Tous les matchs journalisés sont déjà vérifiés !");
+            } else {
+                const valid = results.filter((r) => r.id && r.actualScore);
+                let updated = 0;
+                if (valid.length > 0) {
+                    const r = await api("/api/predictions", {
+                        method: "PATCH",
+                        body: JSON.stringify({ results: valid }),
+                    });
+                    updated = r.updated || 0;
+                }
+                setNotice(
+                    updated > 0
+                        ? `${updated} résultat(s) réel(s) récupéré(s) !`
+                        : "Aucun match terminé à vérifier pour l'instant."
+                );
+                await refresh();
+            }
+        } catch (e) {
+            setNotice(`Vérification emportée par le courant (${e.message || e})`);
+        }
+        setChecking(false);
+    };
+
+    const list = entries || [];
+    const played = list.filter((e) => e.actualScore);
+    const goodOutcome = played.filter((e) => outcomeOf(e.actualScore) === e.prediction);
+    const exactScore = played.filter((e) => e.actualScore === e.predictedScore);
+
+    const statusOf = (e) => {
+        if (!e.actualScore) return "⏳";
+        if (e.actualScore === e.predictedScore) return "🎯";
+        return outcomeOf(e.actualScore) === e.prediction ? "✅" : "❌";
+    };
+
+    return (
+        <div className="paul-fadeup mx-auto w-full max-w-2xl px-4 pb-12">
+            <button onClick={onBack} className="paul-display mb-4 text-sm" style={{ color: C.aqua }}>
+                ← Retour aux matchs du jour
+            </button>
+
+            <div className="paul-display text-center text-2xl font-bold">
+                📊 Le bilan du poulpe
+            </div>
+
+            {/* Compteurs d'utilisation */}
+            <div className="mt-4 flex justify-center gap-3 flex-wrap">
+                <div
+                    className="paul-display px-4 py-2 text-sm font-semibold"
+                    style={{ borderRadius: 12, border: `1px solid ${C.tealSoft}`, background: "rgba(14, 74, 94, 0.5)" }}
+                >
+                    🐙 {counters?.opens ?? "…"} ouverture(s)
+                </div>
+                <div
+                    className="paul-display px-4 py-2 text-sm font-semibold"
+                    style={{ borderRadius: 12, border: `1px solid ${C.tealSoft}`, background: "rgba(14, 74, 94, 0.5)" }}
+                >
+                    🔮 {counters?.goClicks ?? "…"} oracle(s) lancé(s)
+                </div>
+            </div>
+
+            {/* Score de Claude le Poulpe */}
+            {played.length > 0 && (
+                <div
+                    className="paul-display mt-4 p-4 text-center font-semibold"
+                    style={{ borderRadius: 14, border: `1px solid ${C.gold}`, background: "rgba(244, 201, 93, 0.1)", color: C.gold }}
+                >
+                    Bons résultats : {goodOutcome.length}/{played.length} · Scores exacts 🎯 : {exactScore.length}/{played.length}
+                </div>
+            )}
+
+            {/* Journal des prédictions */}
+            <div className="mt-4 flex flex-col gap-2">
+                {entries === null && (
+                    <div className="text-center text-sm" style={{ color: C.tealText }}>
+                        Chargement du journal…
+                    </div>
+                )}
+                {entries !== null && list.length === 0 && (
+                    <div className="text-center text-sm" style={{ color: C.tealText }}>
+                        Aucune prédiction journalisée pour l'instant — lance l'oracle sur un match !
+                    </div>
+                )}
+                {list.map((e) => (
+                    <div
+                        key={e.id}
+                        className="flex items-center justify-between gap-3 px-4 py-3 text-sm"
+                        style={{ borderRadius: 14, border: `1px solid ${C.tealSoft}`, background: "rgba(14, 74, 94, 0.5)" }}
+                    >
+                        <div>
+                            <span style={{ color: C.tealText }}>{e.day}</span>{" "}
+                            <span className="paul-display font-semibold">
+                                {e.home} vs {e.away}
+                            </span>
+                        </div>
+                        <div className="paul-display font-semibold text-right" style={{ whiteSpace: "nowrap" }}>
+                            prédit {e.predictedScore || "?"} → {e.actualScore || "à venir"} {statusOf(e)}
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+            <div className="mt-4 text-center">
+                <button
+                    onClick={check}
+                    disabled={checking || list.length === 0}
+                    className="paul-go paul-display rounded-full px-6 py-2 text-sm font-bold"
+                    style={{
+                        color: C.abyss,
+                        background: `linear-gradient(135deg, ${C.gold}, ${C.coral})`,
+                        opacity: checking || list.length === 0 ? 0.55 : 1,
+                    }}
+                >
+                    {checking ? "Vérification en cours…" : "🔍 Vérifier les résultats réels"}
+                </button>
+                {notice && (
+                    <div className="mt-2 text-sm" style={{ color: C.tealText }}>
+                        {notice}
+                    </div>
+                )}
+            </div>
+
+            <div className="mt-4 text-center text-xs" style={{ color: "rgba(190, 235, 228, 0.4)" }}>
+                Données partagées entre tous les visiteurs du site.
+            </div>
+        </div>
+    );
+}
+
+// --------------------------- App ---------------------------
+
+export default function ClaudeLePoulpe() {
+    const [matches, setMatches] = useState(null);
+    const [showStats, setShowStats] = useState(false);
+    const [error, setError] = useState(null);
+    const [selected, setSelected] = useState(null);
+
+    const load = async () => {
+        setError(null);
+        setMatches(null);
+        try {
+            const result = await fetchTodayMatches();
+            setMatches(Array.isArray(result) ? result : []);
+        } catch (e) {
+            console.error("Erreur oracle :", e);
+            setError(e.message || "Erreur inconnue");
+        }
+    };
+
+    useEffect(() => {
+        load();
+        bumpCounter("open");
+    }, []);
+
+    return (
+        <div className="paul-root">
+            <style>{STYLE}</style>
+
+            <header className="px-4 pb-6 pt-10 text-center">
+                <div className="paul-display text-4xl font-bold tracking-tight">
+                    🐙 CLAUDE <span style={{ color: C.aqua }}>le Poulpe</span>
+                </div>
+                <div
+                    className="paul-display mt-1 text-sm font-medium uppercase"
+                    style={{ letterSpacing: "0.3em", color: C.gold }}
+                >
+                    L'oracle du Mondial 2026
+                </div>
+                <div className="mt-2 text-sm capitalize" style={{ color: C.tealText }}>
+                    {todayLabel()}
+                </div>
+                <button
+                    onClick={() => {
+                        setSelected(null);
+                        setShowStats(true);
+                    }}
+                    className="paul-display mt-3 rounded-full px-4 py-1 text-xs font-semibold"
+                    style={{ border: `1px solid ${C.tealSoft}`, color: C.tealText }}
+                >
+                    📊 Le bilan du poulpe
+                </button>
+            </header>
+
+            {showStats ? (
+                <StatsView onBack={() => setShowStats(false)} />
+            ) : selected ? (
+                <OracleTank match={selected} onBack={() => setSelected(null)} />
+            ) : (
+                <main className="pb-14">
+                    {matches === null && !error && (
+                        <div className="mx-auto max-w-md text-center">
+                            <div className="text-6xl">🐙</div>
+                            <div className="paul-display mt-3 text-lg">
+                                Claude plonge chercher les matchs du jour
+                                <span className="paul-dot">.</span>
+                                <span className="paul-dot" style={{ animationDelay: "0.2s" }}>.</span>
+                                <span className="paul-dot" style={{ animationDelay: "0.4s" }}>.</span>
+                            </div>
+                            <div className="mt-1 text-sm" style={{ color: C.tealText }}>
+                                Le grand croisement de sources se fera au moment du GO 🐙
+                            </div>
+                        </div>
+                    )}
+
+                    {error && (
+                        <div
+                            className="paul-fadeup mx-auto max-w-md p-6 text-center"
+                            style={{
+                                borderRadius: 18,
+                                border: "1px solid rgba(255, 122, 89, 0.4)",
+                                background: "rgba(255, 122, 89, 0.1)",
+                            }}
+                        >
+                            <div className="text-4xl">🌊</div>
+                            <div className="paul-display mt-2 font-semibold">
+                                Le courant a coupé la connexion
+                            </div>
+                            <div className="mt-1 text-sm" style={{ color: C.tealText }}>{error}</div>
+                            <button
+                                onClick={load}
+                                className="paul-display mt-4 rounded-full px-6 py-2 text-sm font-semibold"
+                                style={{ border: `1px solid ${C.tealSoft}`, color: C.foam }}
+                            >
+                                Replonger 🐙
+                            </button>
+                        </div>
+                    )}
+
+                    {matches !== null && !error && (
+                        <MatchList matches={matches} onSelect={setSelected} />
+                    )}
+                </main>
+            )}
+
+            <footer className="pb-6 px-4 text-center text-xs" style={{ color: "rgba(190, 235, 228, 0.4)" }}>
+                Probabilités issues du croisement de plusieurs sources (cotes, forme, face-à-face, contexte, absences, modèles) — pas un conseil de pari. Aucune garantie : même le vrai Paul s'est trompé deux fois.
+            </footer>
+        </div>
+    );
+}
