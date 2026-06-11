@@ -38,6 +38,15 @@ await sql`
         updated_at      timestamptz NOT NULL DEFAULT now()
     )`;
 
+// Cache générique des réponses d'API externes (cotes, scores) :
+// un fetch sert tous les visiteurs pendant le TTL
+await sql`
+    CREATE TABLE IF NOT EXISTS poulpe.cache (
+        key        text PRIMARY KEY,
+        value      jsonb NOT NULL,
+        expires_at timestamptz NOT NULL
+    )`;
+
 const tables = await sql`
     SELECT table_name FROM information_schema.tables WHERE table_schema = 'poulpe'`;
 console.log("Schéma poulpe prêt. Tables :", tables.map((t) => t.table_name).join(", "));

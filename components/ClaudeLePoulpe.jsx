@@ -4,16 +4,13 @@ import { useState, useEffect, useRef } from "react";
 
 // ---------------------------------------------------------------
 // CLAUDE LE POULPE — L'Oracle du Mondial 2026
-// Étape 1 : liste les matchs du jour (cotes 1N2 des bookmakers).
-// Étape 2 : au "GO", analyse approfondie multi-sources du match
-// (cotes de plusieurs bookmakers avec marge retirée, forme récente,
-// face-à-face, contexte, absences, modèles statistiques) pour
-// estimer les probabilités les plus plausibles et le score exact
-// le plus probable. Aucun conseil de pari : uniquement ce qui a le
-// plus de chances de se produire.
-// Les appels à l'oracle passent par /api/oracle (clé côté serveur)
-// et les stats/journal sont stockés en BDD via /api/stats et
-// /api/predictions.
+// Étape 1 : liste les matchs du jour (/api/matches, cotes The Odds API).
+// Étape 2 : au "GO", /api/analyze dé-marge les cotes 1N2 de plusieurs
+// bookmakers, en fait la moyenne (consensus du marché) et calibre un
+// modèle de Poisson dessus pour les scores exacts les plus probables.
+// Aucun LLM, aucun prompt : uniquement des données + du calcul.
+// Stats de clics et journal des prédictions en BDD (/api/stats,
+// /api/predictions) ; scores réels vérifiés via /api/verify.
 // ---------------------------------------------------------------
 
 const C = {
@@ -126,8 +123,6 @@ const OUTCOME_LABEL = {
     draw: () => "Match nul",
 };
 
-const JSON_RULES = `RÈGLES JSON STRICTES : utilise le POINT comme séparateur décimal pour toutes les cotes et probabilités (1.46, JAMAIS 1,46) ; aucune virgule finale avant } ou ] ; uniquement des guillemets doubles ; pas de retour à la ligne à l'intérieur des chaînes ; pas de guillemets doubles à l'intérieur des textes (utilise des apostrophes).`;
-
 function todayLabel() {
     return new Date().toLocaleDateString("fr-FR", {
         weekday: "long",
@@ -137,114 +132,26 @@ function todayLabel() {
     });
 }
 
-// --------------------------- Appels à l'oracle ---------------------------
+// --------------------------- Données de l'oracle ---------------------------
+// Plus aucun prompt ni LLM : /api/matches et /api/analyze servent des cotes
+// réelles (The Odds API, cachées en BDD) et du calcul (dé-margeage + Poisson).
 
-function tryParse(s) {
-    try {
-        return JSON.parse(s);
-    } catch {
-        return undefined;
-    }
-}
-
-function parseJsonBlock(text, open, close) {
-    const clean = text.replace(/```json|```/g, "").trim();
-    const start = clean.indexOf(open);
-    const end = clean.lastIndexOf(close);
-    if (start === -1 || end === -1) throw new Error("Réponse illisible");
-    const slice = clean.slice(start, end + 1);
-
-    let parsed = tryParse(slice);
-    if (parsed === undefined) {
-        // Réparations courantes : virgules décimales françaises (1,46 → 1.46)
-        // et virgules finales avant } ou ]
-        const fixed = slice
-            .replace(/(\d),(\d)/g, "$1.$2")
-            .replace(/,\s*([}\]])/g, "$1");
-        parsed = tryParse(fixed);
-    }
-    if (parsed === undefined) throw new Error("JSON invalide renvoyé par l'oracle");
-    return parsed;
-}
-
-async function callOracle(prompt) {
-    const response = await fetch("/api/oracle", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
-    });
-
-    if (!response.ok) {
-        const detail = await response.json().catch(() => ({}));
-        throw new Error(detail.error || `Erreur API (${response.status})`);
-    }
-    const data = await response.json();
-
-    if (data.stopReason === "max_tokens") {
-        // Réponse coupée en plein milieu du JSON : on relancera l'oracle
-        throw new Error("Réponse de l'oracle tronquée");
-    }
-
-    return data.text || "";
-}
-
-async function withRetry(fn, attempts = 2) {
-    let lastError = null;
-    for (let i = 0; i < attempts; i++) {
-        try {
-            return await fn();
-        } catch (e) {
-            lastError = e;
-        }
-    }
-    throw lastError;
-}
-
-// Étape 1 : liste des matchs du jour (rapide)
+// Étape 1 : liste des matchs du jour
 async function fetchTodayMatches() {
-    const dateFr = todayLabel();
-    const prompt = `Nous sommes le ${dateFr}. Recherche sur le web la liste des matchs de la Coupe du monde de football 2026 qui se jouent AUJOURD'HUI (${dateFr}), avec les cotes 1N2 des sites de paris sportifs (Unibet, Winamax, Betclic, Bet365...).
-
-Réponds UNIQUEMENT avec un tableau JSON valide, sans markdown, sans backticks, sans aucun texte avant ou après, au format exact :
-[{"home":"Nom équipe domicile","away":"Nom équipe extérieur","homeCode":"code pays ISO alpha-2 en minuscules (ex: mx)","awayCode":"code ISO alpha-2 (ex: za)","time":"heure française HH:MM","stadium":"nom du stade","odds":{"home":cote,"draw":cote,"away":cote}}]
-
-Si aucun match n'est prévu aujourd'hui, réponds exactement : []
-
-${JSON_RULES}`;
-
-    return withRetry(async () => parseJsonBlock(await callOracle(prompt), "[", "]"));
+    const data = await api("/api/matches");
+    return data.matches;
 }
 
-// Étape 2 : analyse approfondie multi-sources d'un match (au "GO")
+// Étape 2 : analyse d'un match (au "GO")
 const analysisCache = new Map();
 
 async function analyzeMatch(match) {
-    const key = `${match.home}-${match.away}`;
-    if (analysisCache.has(key)) return analysisCache.get(key);
-
-    const dateFr = todayLabel();
-    const prompt = `Nous sommes le ${dateFr}. Analyse le match de Coupe du monde 2026 : ${match.home} vs ${match.away} (${match.time}, ${match.stadium}).
-
-OBJECTIF : estimer les probabilités les plus PLAUSIBLES du résultat réel et le score exact le plus PROBABLE. PAS de conseil en paris : ignore bonus, promos, value bets et conseils de pronostiqueurs orientés gain.
-
-CONTRAINTES DE RAPIDITÉ TRÈS IMPORTANTES : fais au MAXIMUM 3 recherches web ciblées (ex: "${match.home} ${match.away} cotes pronostic", "${match.home} ${match.away} score exact cote", "${match.home} ${match.away} compos absents"). N'écris AUCUN texte avant, entre ou après tes recherches : ta SEULE sortie texte doit être l'objet JSON final, rien d'autre.
-
-MÉTHODE :
-1. Relève les cotes 1N2 de plusieurs bookmakers et convertis-les en probabilités dé-margées : p(issue) = (1/cote_issue) / (1/cote_dom + 1/cote_nul + 1/cote_ext), puis fais la moyenne entre bookmakers.
-2. Note au passage : forme récente, face-à-face, contexte (domicile, altitude, classement FIFA) et absences.
-3. Cotes "score exact" réelles uniquement si tu les trouves — n'invente JAMAIS une cote, mets null sinon. Cote la plus basse = score le plus probable (ne pas confondre avec les conseils de pronostiqueurs, souvent à cote élevée pour le gain).
-
-ANCRAGE : les cotes des bookmakers intègrent déjà la forme, les absences et le contexte. Tes probabilités finales 1N2 = la moyenne dé-margée des bookmakers, ajustable de ±3 points MAXIMUM, uniquement sur info forte très récente pas encore intégrée dans les cotes (ex: blessure de dernière minute). Les éléments qualitatifs servent à EXPLIQUER la prédiction. La somme des 3 probabilités doit faire exactement 100. Les 3 scores les plus probables sont triés du plus probable au moins probable, le n°1 cohérent avec l'issue la plus probable.
-
-Réponds UNIQUEMENT avec un objet JSON valide, sans markdown, sans backticks, sans aucun texte avant ou après, au format exact (chaque detail et le comment doivent être COURTS, 12 mots maximum) :
-{"prediction":"home" ou "draw" ou "away","probabilities":{"home":entier,"draw":entier,"away":entier},"topScores":[{"score":"X-Y","probability":entier en %,"scoreOdds":cote réelle ou null}],"factors":[{"label":"Cotes bookmakers","detail":"court"},{"label":"Forme récente","detail":"court"},{"label":"Face-à-face","detail":"court"},{"label":"Contexte","detail":"court"},{"label":"Absences","detail":"court"}],"confidence":"haute" ou "moyenne" ou "basse","comment":"synthèse sportive courte, INTERDIT de mentionner pari, mise, gain ou bonus"}
-
-${JSON_RULES}`;
-
-    const result = await withRetry(async () =>
-        parseJsonBlock(await callOracle(prompt), "{", "}")
-    );
-    analysisCache.set(key, result);
+    if (analysisCache.has(match.id)) return analysisCache.get(match.id);
+    const result = await api("/api/analyze", {
+        method: "POST",
+        body: JSON.stringify({ id: match.id }),
+    });
+    analysisCache.set(match.id, result);
     return result;
 }
 
@@ -288,7 +195,9 @@ async function bumpCounter(type) {
 
 async function logPrediction(match, analysis, predictedScore) {
     try {
-        const day = new Date().toISOString().slice(0, 10);
+        // Jour du match côté serveur (heure de Paris) : le même id que celui
+        // reconstruit par /api/verify pour rattacher le score réel
+        const day = match.day || new Date().toISOString().slice(0, 10);
         const id = `${day}-${slug(match.home)}-${slug(match.away)}`;
         await api("/api/predictions", {
             method: "POST",
@@ -309,19 +218,6 @@ async function logPrediction(match, analysis, predictedScore) {
     }
 }
 
-// Va chercher les scores réels des matchs journalisés pas encore vérifiés
-async function verifyResults(entries) {
-    const pending = (entries || []).filter((e) => !e.actualScore).slice(0, 10);
-    if (pending.length === 0) return null;
-    const dateFr = todayLabel();
-    const listing = pending
-        .map((e) => `{"id":"${e.id}","match":"${e.home} vs ${e.away}","date":"${e.day}"}`)
-        .join(",");
-    const prompt = `Nous sommes le ${dateFr}. Voici des matchs de la Coupe du monde 2026 : [${listing}]. Recherche sur le web le score FINAL réel de chaque match (temps réglementaire + prolongation éventuelle, hors tirs au but). N'écris aucun texte en dehors du JSON. Réponds UNIQUEMENT avec un tableau JSON valide, sans markdown, sans backticks : [{"id":"identifiant fourni tel quel","actualScore":"X-Y" (X = buts de la première équipe citée dans match) ou null si le match n'est pas encore terminé}]
-
-${JSON_RULES}`;
-    return withRetry(async () => parseJsonBlock(await callOracle(prompt), "[", "]"));
-}
 
 // --------------------------- Drapeau ---------------------------
 
@@ -470,10 +366,10 @@ function ProbBar({ label, value, color }) {
 // --------------------------- Bassin de l'oracle ---------------------------
 
 const THINKING_LINES = [
-    "Claude épluche les cotes de plusieurs bookmakers…",
-    "Claude étudie la forme des deux équipes…",
-    "Claude relit les confrontations directes…",
-    "Claude vérifie les absents et le contexte…",
+    "Claude relève les cotes de plusieurs bookmakers…",
+    "Claude retire la marge des bookmakers…",
+    "Claude fait la moyenne du marché…",
+    "Claude calcule les scores les plus probables…",
     "Claude croise le tout dans ses 8 tentacules…",
 ];
 
@@ -512,11 +408,14 @@ function OracleTank({ match, onBack }) {
         setError(null);
         setPhase("thinking");
 
-        // Fait défiler les étapes d'analyse pendant la vraie réflexion
-        THINKING_LINES.forEach((_, i) => later(() => setThinkLine(i), i * 2600));
+        // Le calcul est instantané : on fait défiler les étapes pour le show
+        THINKING_LINES.forEach((_, i) => later(() => setThinkLine(i), i * 950));
 
         try {
-            const result = await analyzeMatch(match);
+            const [result] = await Promise.all([
+                analyzeMatch(match),
+                new Promise((resolve) => setTimeout(resolve, 5000)),
+            ]);
             setAnalysis(result);
             choreography(result);
             // Journal pour le bilan de fin de Mondial (BDD partagée)
@@ -883,26 +782,14 @@ function StatsView({ onBack }) {
         setChecking(true);
         setNotice(null);
         try {
-            const results = await verifyResults(entries);
-            if (!results) {
-                setNotice("Tous les matchs journalisés sont déjà vérifiés !");
-            } else {
-                const valid = results.filter((r) => r.id && r.actualScore);
-                let updated = 0;
-                if (valid.length > 0) {
-                    const r = await api("/api/predictions", {
-                        method: "PATCH",
-                        body: JSON.stringify({ results: valid }),
-                    });
-                    updated = r.updated || 0;
-                }
-                setNotice(
-                    updated > 0
-                        ? `${updated} résultat(s) réel(s) récupéré(s) !`
-                        : "Aucun match terminé à vérifier pour l'instant."
-                );
-                await refresh();
-            }
+            // Le serveur récupère les scores finaux réels et met à jour le journal
+            const r = await api("/api/verify", { method: "POST" });
+            setNotice(
+                r.updated > 0
+                    ? `${r.updated} résultat(s) réel(s) récupéré(s) !`
+                    : "Aucun nouveau match terminé à vérifier pour l'instant."
+            );
+            await refresh();
         } catch (e) {
             setNotice(`Vérification emportée par le courant (${e.message || e})`);
         }
@@ -1084,7 +971,7 @@ export default function ClaudeLePoulpe() {
                                 <span className="paul-dot" style={{ animationDelay: "0.4s" }}>.</span>
                             </div>
                             <div className="mt-1 text-sm" style={{ color: C.tealText }}>
-                                Le grand croisement de sources se fera au moment du GO 🐙
+                                Le grand dé-margeage des cotes se fera au moment du GO 🐙
                             </div>
                         </div>
                     )}
@@ -1120,7 +1007,7 @@ export default function ClaudeLePoulpe() {
             )}
 
             <footer className="pb-6 px-4 text-center text-xs" style={{ color: "rgba(190, 235, 228, 0.4)" }}>
-                Probabilités issues du croisement de plusieurs sources (cotes, forme, face-à-face, contexte, absences, modèles) — pas un conseil de pari. Aucune garantie : même le vrai Paul s'est trompé deux fois.
+                Probabilités issues des cotes réelles de plusieurs bookmakers (marges retirées) et d'un modèle statistique — temps réglementaire, pas un conseil de pari. Aucune garantie : même le vrai Paul s'est trompé deux fois.
             </footer>
         </div>
     );
