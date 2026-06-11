@@ -151,13 +151,17 @@ export default function Bilan() {
     const [checking, setChecking] = useState(false);
     const [notice, setNotice] = useState(null);
 
+    const [reports, setReports] = useState([]);
+
     const refresh = async (p) => {
-        const [s, predictions] = await Promise.all([
+        const [s, predictions, rep] = await Promise.all([
             api("/api/stats", p),
             api("/api/predictions", p),
+            api("/api/report", p),
         ]);
         setStats(s);
         setEntries(predictions.entries || []);
+        setReports(rep.reports || []);
     };
 
     const login = async (p) => {
@@ -417,6 +421,31 @@ export default function Bilan() {
                         <div className="bilan-display font-semibold text-right" style={{ whiteSpace: "nowrap" }}>
                             {e.predictedScore || "?"} → {e.actualScore || "à venir"} {statusOf(e)}
                         </div>
+                    </div>
+                ))}
+            </div>
+
+            {/* Signalements des visiteurs */}
+            <div className="bilan-display mt-8 mb-2 text-sm font-semibold uppercase" style={{ letterSpacing: "0.15em", color: C.aqua }}>
+                Signalements ({reports.length})
+            </div>
+            <div className="flex flex-col gap-2">
+                {reports.length === 0 && (
+                    <div className="p-4 text-center text-sm" style={{ ...card, color: C.tealText }}>
+                        Aucun signalement — le bassin est calme. 🌊
+                    </div>
+                )}
+                {reports.map((r) => (
+                    <div key={r.id} className="px-4 py-3 text-sm" style={card}>
+                        <div className="text-xs" style={{ color: C.tealText }}>
+                            {r.at}
+                            {r.name && (
+                                <span className="bilan-display ml-2 font-semibold" style={{ color: C.gold }}>
+                                    {r.name}
+                                </span>
+                            )}
+                        </div>
+                        <div className="mt-1" style={{ whiteSpace: "pre-wrap" }}>{r.message}</div>
                     </div>
                 ))}
             </div>

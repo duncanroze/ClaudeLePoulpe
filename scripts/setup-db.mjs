@@ -59,6 +59,16 @@ if (process.env.CRON_SECRET) {
         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`;
 }
 
+// Signalements de problèmes par les visiteurs (IP hashée pour l'anti-spam)
+await sql`
+    CREATE TABLE IF NOT EXISTS poulpe.reports (
+        id         serial PRIMARY KEY,
+        name       text,
+        message    text NOT NULL,
+        ip_hash    text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now()
+    )`;
+
 // Budget journalier d'appels à The Odds API (plafond dur, voir lib/budget.js)
 await sql`
     CREATE TABLE IF NOT EXISTS poulpe.api_budget (

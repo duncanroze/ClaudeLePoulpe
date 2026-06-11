@@ -691,6 +691,146 @@ function OracleTank({ match, onBack }) {
     );
 }
 
+// --------------------------- Signaler un problème ---------------------------
+
+function ReportWidget() {
+    const [open, setOpen] = useState(false);
+    const [name, setName] = useState("");
+    const [message, setMessage] = useState("");
+    const [status, setStatus] = useState(null); // null | "sending" | "sent" | message d'erreur
+
+    const send = async (e) => {
+        e.preventDefault();
+        if (status === "sending") return;
+        setStatus("sending");
+        try {
+            // "website" = honeypot anti-bot, laissé vide par les humains
+            await api("/api/report", {
+                method: "POST",
+                body: JSON.stringify({ name, message, website: "" }),
+            });
+            setStatus("sent");
+            setName("");
+            setMessage("");
+        } catch (err) {
+            setStatus(err.message || "Erreur d'envoi");
+        }
+    };
+
+    return (
+        <div style={{ position: "fixed", right: 16, bottom: 16, zIndex: 50 }}>
+            {open && (
+                <form
+                    onSubmit={send}
+                    className="paul-fadeup mb-2 p-3"
+                    style={{
+                        width: 260,
+                        borderRadius: 16,
+                        border: `1px solid ${C.tealSoft}`,
+                        background: "rgba(6, 48, 63, 0.97)",
+                        boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+                    }}
+                >
+                    <div className="paul-display text-sm font-semibold mb-2">
+                        🛟 Un souci avec le poulpe ?
+                    </div>
+                    {status === "sent" ? (
+                        <div className="text-sm" style={{ color: C.aqua }}>
+                            Merci, c'est transmis ! 🐙
+                        </div>
+                    ) : (
+                        <>
+                            <input
+                                type="text"
+                                value={name}
+                                onChange={(e) => setName(e.target.value)}
+                                placeholder="Ptdr t ki ?"
+                                maxLength={60}
+                                style={{
+                                    width: "100%",
+                                    borderRadius: 10,
+                                    border: `1px solid ${C.tealSoft}`,
+                                    background: "rgba(4, 34, 46, 0.6)",
+                                    color: C.foam,
+                                    padding: "8px 10px",
+                                    fontSize: 13,
+                                    outline: "none",
+                                    marginBottom: 8,
+                                }}
+                            />
+                            <textarea
+                                value={message}
+                                onChange={(e) => setMessage(e.target.value)}
+                                placeholder="Décris le problème (10 caractères min)…"
+                                rows={3}
+                                maxLength={500}
+                                style={{
+                                    width: "100%",
+                                    borderRadius: 10,
+                                    border: `1px solid ${C.tealSoft}`,
+                                    background: "rgba(4, 34, 46, 0.6)",
+                                    color: C.foam,
+                                    padding: "8px 10px",
+                                    fontSize: 13,
+                                    outline: "none",
+                                    resize: "none",
+                                }}
+                            />
+                            {/* Honeypot invisible pour les bots */}
+                            <input
+                                type="text"
+                                name="website"
+                                tabIndex={-1}
+                                autoComplete="off"
+                                style={{ position: "absolute", left: -9999, width: 1, height: 1 }}
+                                aria-hidden="true"
+                            />
+                            <button
+                                type="submit"
+                                disabled={status === "sending" || message.trim().length < 10}
+                                className="paul-go paul-display mt-2 w-full rounded-full px-4 py-2 text-sm font-bold"
+                                style={{
+                                    color: C.abyss,
+                                    background: `linear-gradient(135deg, ${C.gold}, ${C.coral})`,
+                                    opacity:
+                                        status === "sending" || message.trim().length < 10 ? 0.55 : 1,
+                                }}
+                            >
+                                {status === "sending" ? "Envoi…" : "Envoyer"}
+                            </button>
+                            {status && status !== "sending" && status !== "sent" && (
+                                <div className="mt-2 text-xs" style={{ color: C.coral }}>
+                                    {status}
+                                </div>
+                            )}
+                        </>
+                    )}
+                </form>
+            )}
+            <button
+                onClick={() => {
+                    setOpen(!open);
+                    if (!open) setStatus(null);
+                }}
+                aria-label="Signaler un problème"
+                className="paul-go paul-display"
+                style={{
+                    float: "right",
+                    width: 44,
+                    height: 44,
+                    borderRadius: "50%",
+                    fontSize: 20,
+                    border: `1px solid ${C.tealSoft}`,
+                    background: "rgba(6, 48, 63, 0.95)",
+                    boxShadow: "0 4px 14px rgba(0,0,0,0.45)",
+                }}
+            >
+                {open ? "✕" : "🛟"}
+            </button>
+        </div>
+    );
+}
+
 // --------------------------- Liste des matchs ---------------------------
 
 function MatchList({ matches, onSelect, dayLabel }) {
@@ -873,6 +1013,8 @@ export default function ClaudeLePoulpe() {
                     )}
                 </main>
             )}
+
+            <ReportWidget />
 
             <footer className="pb-6 px-4 text-center text-xs" style={{ color: "rgba(190, 235, 228, 0.4)" }}>
                 Probabilités issues des cotes réelles de plusieurs bookmakers (marges retirées) et d'un modèle statistique — temps réglementaire, pas un conseil de pari. Aucune garantie : même le vrai Paul s'est trompé deux fois.
