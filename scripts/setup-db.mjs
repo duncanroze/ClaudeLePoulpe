@@ -47,6 +47,13 @@ await sql`
         expires_at timestamptz NOT NULL
     )`;
 
+// Budget journalier d'appels à The Odds API (plafond dur, voir lib/budget.js)
+await sql`
+    CREATE TABLE IF NOT EXISTS poulpe.api_budget (
+        day  date PRIMARY KEY,
+        used int NOT NULL DEFAULT 0
+    )`;
+
 const tables = await sql`
     SELECT table_name FROM information_schema.tables WHERE table_schema = 'poulpe'`;
 console.log("Schéma poulpe prêt. Tables :", tables.map((t) => t.table_name).join(", "));
