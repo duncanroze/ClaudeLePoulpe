@@ -767,7 +767,7 @@ function ReportWidget() {
                             <textarea
                                 value={message}
                                 onChange={(e) => setMessage(e.target.value)}
-                                placeholder="Décris le problème (10 caractères min)…"
+                                placeholder="N'hésite pas à raconter ta grande vie…"
                                 rows={3}
                                 maxLength={500}
                                 style={{
