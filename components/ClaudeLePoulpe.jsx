@@ -170,16 +170,10 @@ const sortScores = (arr) =>
             (x.scoreOdds ?? Infinity) - (y.scoreOdds ?? Infinity)
     );
 
-function outcomeOf(score) {
-    const [h, a] = String(score || "").split("-").map(Number);
-    if (Number.isNaN(h) || Number.isNaN(a)) return null;
-    return h > a ? "home" : h < a ? "away" : "draw";
-}
-
-async function api(path, options) {
+async function api(path, options = {}) {
     const response = await fetch(path, {
-        headers: { "Content-Type": "application/json" },
         ...options,
+        headers: { "Content-Type": "application/json", ...(options.headers || {}) },
     });
     if (!response.ok) throw new Error(`Erreur serveur (${response.status})`);
     return response.json();
@@ -750,162 +744,10 @@ function MatchList({ matches, onSelect }) {
     );
 }
 
-// --------------------------- Le bilan du poulpe ---------------------------
-
-function StatsView({ onBack }) {
-    const [counters, setCounters] = useState(null);
-    const [entries, setEntries] = useState(null);
-    const [checking, setChecking] = useState(false);
-    const [notice, setNotice] = useState(null);
-
-    const refresh = async () => {
-        try {
-            const [stats, predictions] = await Promise.all([
-                api("/api/stats"),
-                api("/api/predictions"),
-            ]);
-            setCounters(stats.counters || {});
-            setEntries(predictions.entries || []);
-        } catch (e) {
-            console.error("Erreur bilan :", e);
-            setCounters({});
-            setEntries([]);
-            setNotice("Impossible de charger le bilan, réessaie plus tard.");
-        }
-    };
-
-    useEffect(() => {
-        refresh();
-    }, []);
-
-    const check = async () => {
-        setChecking(true);
-        setNotice(null);
-        try {
-            // Le serveur récupère les scores finaux réels et met à jour le journal
-            const r = await api("/api/verify", { method: "POST" });
-            setNotice(
-                r.updated > 0
-                    ? `${r.updated} résultat(s) réel(s) récupéré(s) !`
-                    : "Aucun nouveau match terminé à vérifier pour l'instant."
-            );
-            await refresh();
-        } catch (e) {
-            setNotice(`Vérification emportée par le courant (${e.message || e})`);
-        }
-        setChecking(false);
-    };
-
-    const list = entries || [];
-    const played = list.filter((e) => e.actualScore);
-    const goodOutcome = played.filter((e) => outcomeOf(e.actualScore) === e.prediction);
-    const exactScore = played.filter((e) => e.actualScore === e.predictedScore);
-
-    const statusOf = (e) => {
-        if (!e.actualScore) return "⏳";
-        if (e.actualScore === e.predictedScore) return "🎯";
-        return outcomeOf(e.actualScore) === e.prediction ? "✅" : "❌";
-    };
-
-    return (
-        <div className="paul-fadeup mx-auto w-full max-w-2xl px-4 pb-12">
-            <button onClick={onBack} className="paul-display mb-4 text-sm" style={{ color: C.aqua }}>
-                ← Retour aux matchs du jour
-            </button>
-
-            <div className="paul-display text-center text-2xl font-bold">
-                📊 Le bilan du poulpe
-            </div>
-
-            {/* Compteurs d'utilisation */}
-            <div className="mt-4 flex justify-center gap-3 flex-wrap">
-                <div
-                    className="paul-display px-4 py-2 text-sm font-semibold"
-                    style={{ borderRadius: 12, border: `1px solid ${C.tealSoft}`, background: "rgba(14, 74, 94, 0.5)" }}
-                >
-                    🐙 {counters?.opens ?? "…"} ouverture(s)
-                </div>
-                <div
-                    className="paul-display px-4 py-2 text-sm font-semibold"
-                    style={{ borderRadius: 12, border: `1px solid ${C.tealSoft}`, background: "rgba(14, 74, 94, 0.5)" }}
-                >
-                    🔮 {counters?.goClicks ?? "…"} oracle(s) lancé(s)
-                </div>
-            </div>
-
-            {/* Score de Claude le Poulpe */}
-            {played.length > 0 && (
-                <div
-                    className="paul-display mt-4 p-4 text-center font-semibold"
-                    style={{ borderRadius: 14, border: `1px solid ${C.gold}`, background: "rgba(244, 201, 93, 0.1)", color: C.gold }}
-                >
-                    Bons résultats : {goodOutcome.length}/{played.length} · Scores exacts 🎯 : {exactScore.length}/{played.length}
-                </div>
-            )}
-
-            {/* Journal des prédictions */}
-            <div className="mt-4 flex flex-col gap-2">
-                {entries === null && (
-                    <div className="text-center text-sm" style={{ color: C.tealText }}>
-                        Chargement du journal…
-                    </div>
-                )}
-                {entries !== null && list.length === 0 && (
-                    <div className="text-center text-sm" style={{ color: C.tealText }}>
-                        Aucune prédiction journalisée pour l'instant — lance l'oracle sur un match !
-                    </div>
-                )}
-                {list.map((e) => (
-                    <div
-                        key={e.id}
-                        className="flex items-center justify-between gap-3 px-4 py-3 text-sm"
-                        style={{ borderRadius: 14, border: `1px solid ${C.tealSoft}`, background: "rgba(14, 74, 94, 0.5)" }}
-                    >
-                        <div>
-                            <span style={{ color: C.tealText }}>{e.day}</span>{" "}
-                            <span className="paul-display font-semibold">
-                                {e.home} vs {e.away}
-                            </span>
-                        </div>
-                        <div className="paul-display font-semibold text-right" style={{ whiteSpace: "nowrap" }}>
-                            prédit {e.predictedScore || "?"} → {e.actualScore || "à venir"} {statusOf(e)}
-                        </div>
-                    </div>
-                ))}
-            </div>
-
-            <div className="mt-4 text-center">
-                <button
-                    onClick={check}
-                    disabled={checking || list.length === 0}
-                    className="paul-go paul-display rounded-full px-6 py-2 text-sm font-bold"
-                    style={{
-                        color: C.abyss,
-                        background: `linear-gradient(135deg, ${C.gold}, ${C.coral})`,
-                        opacity: checking || list.length === 0 ? 0.55 : 1,
-                    }}
-                >
-                    {checking ? "Vérification en cours…" : "🔍 Vérifier les résultats réels"}
-                </button>
-                {notice && (
-                    <div className="mt-2 text-sm" style={{ color: C.tealText }}>
-                        {notice}
-                    </div>
-                )}
-            </div>
-
-            <div className="mt-4 text-center text-xs" style={{ color: "rgba(190, 235, 228, 0.4)" }}>
-                Données partagées entre tous les visiteurs du site.
-            </div>
-        </div>
-    );
-}
-
 // --------------------------- App ---------------------------
 
 export default function ClaudeLePoulpe() {
     const [matches, setMatches] = useState(null);
-    const [showStats, setShowStats] = useState(false);
     const [error, setError] = useState(null);
     const [selected, setSelected] = useState(null);
 
@@ -943,21 +785,9 @@ export default function ClaudeLePoulpe() {
                 <div className="mt-2 text-sm capitalize" style={{ color: C.tealText }}>
                     {todayLabel()}
                 </div>
-                <button
-                    onClick={() => {
-                        setSelected(null);
-                        setShowStats(true);
-                    }}
-                    className="paul-display mt-3 rounded-full px-4 py-1 text-xs font-semibold"
-                    style={{ border: `1px solid ${C.tealSoft}`, color: C.tealText }}
-                >
-                    📊 Le bilan du poulpe
-                </button>
             </header>
 
-            {showStats ? (
-                <StatsView onBack={() => setShowStats(false)} />
-            ) : selected ? (
+            {selected ? (
                 <OracleTank match={selected} onBack={() => setSelected(null)} />
             ) : (
                 <main className="pb-14">

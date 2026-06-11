@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { sql } from "../../../lib/db";
-import { isAuthorized } from "../../../lib/guard";
+import { isAuthorized, requireSecret } from "../../../lib/guard";
 
 const rowToEntry = (r) => ({
     id: r.id,
@@ -15,8 +15,11 @@ const rowToEntry = (r) => ({
     actualScore: r.actual_score,
 });
 
-// GET → journal complet des prédictions (du plus récent au plus ancien)
-export async function GET() {
+// GET → journal complet des prédictions (privé : mot de passe requis)
+export async function GET(request) {
+    if (!requireSecret(request)) {
+        return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+    }
     const rows = await sql`
         SELECT id, to_char(day, 'YYYY-MM-DD') AS day, home, away, match_time,
                prediction, probabilities, predicted_score, confidence, actual_score
@@ -46,7 +49,7 @@ export async function POST(request) {
         isStr(id, 140) && /^\d{4}-\d{2}-\d{2}-[a-z0-9]{1,60}-[a-z0-9]{1,60}$/.test(id) &&
         isStr(day, 10) && /^\d{4}-\d{2}-\d{2}$/.test(day) && id.startsWith(day) &&
         isStr(home, 60) && isStr(away, 60) &&
-        (time == null || (isStr(time, 8) && /^\d{2}:\d{2}$/.test(time))) &&
+        (time == null || (isStr(time, 14) && /^\d{2}:\d{2}( \(nuit\))?$/.test(time))) &&
         (prediction == null || ["home", "draw", "away"].includes(prediction)) &&
         (confidence == null || ["haute", "moyenne", "basse"].includes(confidence)) &&
         (predictedScore == null || (isStr(predictedScore, 5) && scoreRe.test(predictedScore))) &&
@@ -78,7 +81,7 @@ export async function POST(request) {
 
 // PATCH {results: [{id, actualScore}]} → enregistre les scores réels vérifiés
 export async function PATCH(request) {
-    if (!isAuthorized(request)) {
+    if (!requireSecret(request)) {
         return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
     }
     let results;
