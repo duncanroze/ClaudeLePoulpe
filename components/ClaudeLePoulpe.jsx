@@ -793,13 +793,13 @@ function ReportWidget() {
                             />
                             <button
                                 type="submit"
-                                disabled={status === "sending" || message.trim().length < 10}
+                                disabled={status === "sending" || message.trim().length < 1}
                                 className="paul-go paul-display mt-2 w-full rounded-full px-4 py-2 text-sm font-bold"
                                 style={{
                                     color: C.abyss,
                                     background: `linear-gradient(135deg, ${C.gold}, ${C.coral})`,
                                     opacity:
-                                        status === "sending" || message.trim().length < 10 ? 0.55 : 1,
+                                        status === "sending" || message.trim().length < 1 ? 0.55 : 1,
                                 }}
                             >
                                 {status === "sending" ? "Envoi…" : "Envoyer"}

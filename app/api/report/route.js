@@ -54,9 +54,9 @@ export async function POST(request) {
     if (body.website) return NextResponse.json({ ok: true });
 
     const message = typeof body.message === "string" ? body.message.trim() : "";
-    if (message.length < 10 || message.length > 500) {
+    if (message.length < 1 || message.length > 500) {
         return NextResponse.json(
-            { error: "Le message doit faire entre 10 et 500 caractères" },
+            { error: "Le message doit faire entre 1 et 500 caractères" },
             { status: 400 }
         );
     }
