@@ -98,6 +98,9 @@ const STYLE = `
 .paul-dot    { animation: dotPulse 1.2s infinite; }
 .paul-bar    { animation: barGrow 1s ease-out both; }
 
+.paul-fab-tip { opacity: 0; transform: translateX(6px); transition: opacity 0.2s ease, transform 0.2s ease; pointer-events: none; }
+.paul-fab:hover ~ .paul-fab-tip, .paul-fab:focus-visible ~ .paul-fab-tip { opacity: 1; transform: translateX(0); }
+
 .paul-card { transition: transform 0.18s ease, border-color 0.18s ease; }
 .paul-card:hover { transform: translateY(-3px); border-color: ${C.aqua} !important; }
 .paul-go { transition: transform 0.15s ease, filter 0.15s ease; }
@@ -807,26 +810,49 @@ function ReportWidget() {
                     )}
                 </form>
             )}
-            <button
-                onClick={() => {
-                    setOpen(!open);
-                    if (!open) setStatus(null);
-                }}
-                aria-label="Signaler un problème"
-                className="paul-go paul-display"
+            <div
                 style={{
-                    float: "right",
-                    width: 44,
-                    height: 44,
-                    borderRadius: "50%",
-                    fontSize: 20,
-                    border: `1px solid ${C.tealSoft}`,
-                    background: "rgba(6, 48, 63, 0.95)",
-                    boxShadow: "0 4px 14px rgba(0,0,0,0.45)",
+                    display: "flex",
+                    flexDirection: "row-reverse",
+                    alignItems: "center",
+                    gap: 10,
                 }}
             >
-                {open ? "✕" : "🛟"}
-            </button>
+                <button
+                    onClick={() => {
+                        setOpen(!open);
+                        if (!open) setStatus(null);
+                    }}
+                    aria-label="Un bug, un avis ?"
+                    className="paul-go paul-display paul-fab"
+                    style={{
+                        width: 88,
+                        height: 88,
+                        borderRadius: "50%",
+                        fontSize: open ? 36 : 48,
+                        border: `2px solid ${C.tealSoft}`,
+                        background: "rgba(6, 48, 63, 0.95)",
+                        boxShadow: "0 6px 18px rgba(0,0,0,0.5)",
+                    }}
+                >
+                    {open ? "✕" : "🛟"}
+                </button>
+                {!open && (
+                    <span
+                        className="paul-fab-tip paul-display text-sm font-semibold"
+                        style={{
+                            background: C.foam,
+                            color: C.abyss,
+                            padding: "8px 14px",
+                            borderRadius: 999,
+                            whiteSpace: "nowrap",
+                            boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+                        }}
+                    >
+                        Un bug, un avis ?
+                    </span>
+                )}
+            </div>
         </div>
     );
 }
