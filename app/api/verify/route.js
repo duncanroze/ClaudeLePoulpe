@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { sql } from "../../../lib/db";
 import { getScores } from "../../../lib/oddsApi";
 import { teamInfo, slug } from "../../../lib/teams";
+import { isAuthorized, requireSecret } from "../../../lib/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +35,11 @@ async function verify() {
     return { ok: true, completed: completed.length, updated };
 }
 
-export async function POST() {
+// Bouton "Vérifier" du site (même origine) ou mot de passe
+export async function POST(request) {
+    if (!isAuthorized(request)) {
+        return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+    }
     try {
         return NextResponse.json(await verify());
     } catch (e) {
@@ -43,5 +48,11 @@ export async function POST() {
     }
 }
 
-// GET pour le cron Vercel (les crons n'envoient que des GET)
-export const GET = POST;
+// GET réservé au cron Vercel : il envoie automatiquement
+// "Authorization: Bearer CRON_SECRET"
+export async function GET(request) {
+    if (!requireSecret(request)) {
+        return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+    }
+    return POST(request);
+}

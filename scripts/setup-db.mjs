@@ -47,6 +47,18 @@ await sql`
         expires_at timestamptz NOT NULL
     )`;
 
+// Réglages de l'app (dont le mot de passe des routes API, à la demande de Duncan)
+await sql`
+    CREATE TABLE IF NOT EXISTS poulpe.settings (
+        key   text PRIMARY KEY,
+        value text NOT NULL
+    )`;
+if (process.env.CRON_SECRET) {
+    await sql`
+        INSERT INTO poulpe.settings (key, value) VALUES ('api_password', ${process.env.CRON_SECRET})
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`;
+}
+
 // Budget journalier d'appels à The Odds API (plafond dur, voir lib/budget.js)
 await sql`
     CREATE TABLE IF NOT EXISTS poulpe.api_budget (

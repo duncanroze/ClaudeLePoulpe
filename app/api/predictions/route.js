@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { sql } from "../../../lib/db";
+import { isAuthorized } from "../../../lib/guard";
 
 const rowToEntry = (r) => ({
     id: r.id,
@@ -26,6 +27,9 @@ export async function GET() {
 
 // POST → journalise/met à jour une prédiction (une par match et par jour)
 export async function POST(request) {
+    if (!isAuthorized(request)) {
+        return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+    }
     let body;
     try {
         body = await request.json();
@@ -33,15 +37,35 @@ export async function POST(request) {
         return NextResponse.json({ error: "Corps JSON invalide" }, { status: 400 });
     }
     const { id, day, home, away, time, prediction, probabilities, predictedScore, confidence } = body;
-    if (!id || !day || !home || !away || typeof id !== "string" || id.length > 200) {
-        return NextResponse.json({ error: "Champs requis manquants" }, { status: 400 });
+
+    // Validation stricte : formats fermés, listes blanches, tailles bornées
+    const isStr = (v, max) => typeof v === "string" && v.length > 0 && v.length <= max;
+    const scoreRe = /^\d{1,2}-\d{1,2}$/;
+    const probInt = (v) => Number.isInteger(v) && v >= 0 && v <= 100;
+    const valid =
+        isStr(id, 140) && /^\d{4}-\d{2}-\d{2}-[a-z0-9]{1,60}-[a-z0-9]{1,60}$/.test(id) &&
+        isStr(day, 10) && /^\d{4}-\d{2}-\d{2}$/.test(day) && id.startsWith(day) &&
+        isStr(home, 60) && isStr(away, 60) &&
+        (time == null || (isStr(time, 8) && /^\d{2}:\d{2}$/.test(time))) &&
+        (prediction == null || ["home", "draw", "away"].includes(prediction)) &&
+        (confidence == null || ["haute", "moyenne", "basse"].includes(confidence)) &&
+        (predictedScore == null || (isStr(predictedScore, 5) && scoreRe.test(predictedScore))) &&
+        (probabilities == null ||
+            (typeof probabilities === "object" &&
+                probInt(probabilities.home) && probInt(probabilities.draw) && probInt(probabilities.away)));
+    if (!valid) {
+        return NextResponse.json({ error: "Données de prédiction invalides" }, { status: 400 });
     }
+    const probs = probabilities
+        ? { home: probabilities.home, draw: probabilities.draw, away: probabilities.away }
+        : null;
+
     await sql`
         INSERT INTO poulpe.predictions
             (id, day, home, away, match_time, prediction, probabilities, predicted_score, confidence)
         VALUES
             (${id}, ${day}, ${home}, ${away}, ${time ?? null}, ${prediction ?? null},
-             ${JSON.stringify(probabilities ?? null)}, ${predictedScore ?? null}, ${confidence ?? null})
+             ${JSON.stringify(probs)}, ${predictedScore ?? null}, ${confidence ?? null})
         ON CONFLICT (id) DO UPDATE SET
             prediction      = EXCLUDED.prediction,
             probabilities   = EXCLUDED.probabilities,
@@ -54,6 +78,9 @@ export async function POST(request) {
 
 // PATCH {results: [{id, actualScore}]} → enregistre les scores réels vérifiés
 export async function PATCH(request) {
+    if (!isAuthorized(request)) {
+        return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+    }
     let results;
     try {
         ({ results } = await request.json());

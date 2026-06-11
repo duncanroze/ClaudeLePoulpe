@@ -2,10 +2,14 @@ import { NextResponse } from "next/server";
 import { getEvents } from "../../../lib/oddsApi";
 import { teamInfo } from "../../../lib/teams";
 import { buildAnalysis } from "../../../lib/predict";
+import { isAuthorized } from "../../../lib/guard";
 
 // POST {id} → analyse d'un match : dé-margeage des cotes + modèle de Poisson.
 // Pur calcul sur les cotes déjà en cache : un clic ne coûte rien.
 export async function POST(request) {
+    if (!isAuthorized(request)) {
+        return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+    }
     let id;
     try {
         ({ id } = await request.json());

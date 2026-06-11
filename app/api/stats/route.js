@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { sql } from "../../../lib/db";
 import { budgetStatus } from "../../../lib/budget";
+import { isAuthorized } from "../../../lib/guard";
 
 const EVENT_TYPES = new Set(["open", "go"]);
 
@@ -25,6 +26,9 @@ export async function GET() {
 
 // POST {type: "open" | "go"} → enregistre un clic
 export async function POST(request) {
+    if (!isAuthorized(request)) {
+        return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+    }
     let type;
     try {
         ({ type } = await request.json());
