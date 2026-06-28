@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { categoryOf } from "../lib/stages";
 
 // ---------------------------------------------------------------
 // /bilan — dashboard privé du gardien du bassin (mot de passe).
@@ -151,6 +152,7 @@ export default function Bilan() {
     const [stats, setStats] = useState(null);
     const [entries, setEntries] = useState([]);
     const [checking, setChecking] = useState(false);
+    const [predicting, setPredicting] = useState(false);
     const [notice, setNotice] = useState(null);
 
     const [reports, setReports] = useState([]);
@@ -210,6 +212,23 @@ export default function Bilan() {
         setChecking(false);
     };
 
+    const predictNow = async () => {
+        setPredicting(true);
+        setNotice(null);
+        try {
+            const r = await api("/api/predict", pass, { method: "POST" });
+            setNotice(
+                r.predicted > 0
+                    ? `${r.predicted} prédiction(s) générée(s) / mise(s) à jour.`
+                    : "Aucun match à coter disponible pour l'instant."
+            );
+            await refresh(pass);
+        } catch (e) {
+            setNotice(`Erreur de prédiction (${e.message || e})`);
+        }
+        setPredicting(false);
+    };
+
     const logout = () => {
         localStorage.removeItem("poulpe-pass");
         setAuthed(false);
@@ -229,6 +248,61 @@ export default function Bilan() {
         if (e.actualScore === e.predictedScore) return "🎯";
         return outcomeOf(e.actualScore) === e.prediction ? "✅" : "❌";
     };
+
+    // Regroupement du journal par type de match : groupes A→L pour la phase
+    // de poules, puis chaque tour à élimination directe (16es → finale).
+    const buckets = useMemo(() => {
+        const map = new Map();
+        for (const e of entries) {
+            const cat = categoryOf({ day: e.day, home: e.home, away: e.away });
+            let b = map.get(cat.key);
+            if (!b) {
+                b = { ...cat, entries: [] };
+                map.set(cat.key, b);
+            }
+            b.entries.push(e);
+        }
+        return [...map.values()]
+            .map((b) => {
+                const done = b.entries.filter((e) => e.actualScore);
+                return {
+                    ...b,
+                    done: done.length,
+                    good: done.filter((e) => outcomeOf(e.actualScore) === e.prediction).length,
+                    exact: done.filter((e) => e.actualScore === e.predictedScore).length,
+                };
+            })
+            .sort((a, b) => a.order - b.order);
+    }, [entries]);
+
+    const entryRow = (e) => (
+        <div
+            key={e.id}
+            className="flex items-center justify-between gap-3 px-4 py-3 text-sm flex-wrap"
+            style={card}
+        >
+            <div>
+                <span style={{ color: C.tealText }}>{e.day}</span>{" "}
+                <span className="bilan-display font-semibold">
+                    {e.home} vs {e.away}
+                </span>
+                {e.time && (
+                    <span className="ml-2 text-xs" style={{ color: C.tealText }}>
+                        {e.time}
+                    </span>
+                )}
+                <div className="mt-1 text-xs" style={{ color: C.tealText }}>
+                    prédit : {OUTCOME_SHORT[e.prediction] || "?"}
+                    {e.probabilities &&
+                        ` (${e.probabilities.home}/${e.probabilities.draw}/${e.probabilities.away} %)`}
+                    {e.confidence && ` · fiabilité ${e.confidence}`}
+                </div>
+            </div>
+            <div className="bilan-display font-semibold text-right" style={{ whiteSpace: "nowrap" }}>
+                {e.predictedScore || "?"} → {e.actualScore || "à venir"} {statusOf(e)}
+            </div>
+        </div>
+    );
 
     const gate = (
         <div className="bilan-fadeup mx-auto w-full max-w-md px-4 pt-24 text-center">
@@ -394,60 +468,62 @@ export default function Bilan() {
                 <div className="bilan-display text-sm font-semibold uppercase" style={{ letterSpacing: "0.15em", color: C.aqua }}>
                     Journal des prédictions
                 </div>
-                <button
-                    onClick={verifyNow}
-                    disabled={checking || entries.length === 0}
-                    className="bilan-btn bilan-display rounded-full px-5 py-2 text-xs font-bold"
-                    style={{
-                        color: C.abyss,
-                        background: `linear-gradient(135deg, ${C.gold}, ${C.coral})`,
-                        opacity: checking || entries.length === 0 ? 0.55 : 1,
-                    }}
-                >
-                    {checking ? "Vérification…" : "🔍 Vérifier maintenant"}
-                </button>
+                <div className="flex gap-2 flex-wrap">
+                    <button
+                        onClick={predictNow}
+                        disabled={predicting}
+                        className="bilan-btn bilan-display rounded-full px-5 py-2 text-xs font-bold"
+                        style={{
+                            color: C.abyss,
+                            background: `linear-gradient(135deg, ${C.aqua}, ${C.gold})`,
+                            opacity: predicting ? 0.55 : 1,
+                        }}
+                    >
+                        {predicting ? "Prédiction…" : "🔮 Prédire le jour"}
+                    </button>
+                    <button
+                        onClick={verifyNow}
+                        disabled={checking || entries.length === 0}
+                        className="bilan-btn bilan-display rounded-full px-5 py-2 text-xs font-bold"
+                        style={{
+                            color: C.abyss,
+                            background: `linear-gradient(135deg, ${C.gold}, ${C.coral})`,
+                            opacity: checking || entries.length === 0 ? 0.55 : 1,
+                        }}
+                    >
+                        {checking ? "Vérification…" : "🔍 Vérifier maintenant"}
+                    </button>
+                </div>
             </div>
             {notice && (
                 <div className="mt-2 text-sm" style={{ color: C.tealText }}>
                     {notice}
                 </div>
             )}
-            <div className="mt-3 flex flex-col gap-2">
-                {entries.length === 0 && (
-                    <div className="p-6 text-center text-sm" style={{ ...card, color: C.tealText }}>
-                        Aucune prédiction journalisée — le journal se remplit quand les
-                        visiteurs lancent l'oracle.
-                    </div>
-                )}
-                {entries.map((e) => (
-                    <div
-                        key={e.id}
-                        className="flex items-center justify-between gap-3 px-4 py-3 text-sm flex-wrap"
-                        style={card}
-                    >
-                        <div>
-                            <span style={{ color: C.tealText }}>{e.day}</span>{" "}
-                            <span className="bilan-display font-semibold">
-                                {e.home} vs {e.away}
+            {entries.length === 0 && (
+                <div className="mt-3 p-6 text-center text-sm" style={{ ...card, color: C.tealText }}>
+                    Aucune prédiction journalisée — le journal se remplit
+                    automatiquement chaque jour (et quand les visiteurs lancent l'oracle).
+                </div>
+            )}
+            {buckets.map((b) => (
+                <div key={b.key} className="mt-5">
+                    <div className="flex items-baseline justify-between flex-wrap gap-2 mb-2">
+                        <div className="bilan-display text-base font-bold" style={{ color: C.gold }}>
+                            {b.label}{" "}
+                            <span className="text-xs font-semibold" style={{ color: C.tealText }}>
+                                · {b.entries.length} prédiction{b.entries.length > 1 ? "s" : ""}
                             </span>
-                            {e.time && (
-                                <span className="ml-2 text-xs" style={{ color: C.tealText }}>
-                                    {e.time}
-                                </span>
-                            )}
-                            <div className="mt-1 text-xs" style={{ color: C.tealText }}>
-                                prédit : {OUTCOME_SHORT[e.prediction] || "?"}
-                                {e.probabilities &&
-                                    ` (${e.probabilities.home}/${e.probabilities.draw}/${e.probabilities.away} %)`}
-                                {e.confidence && ` · fiabilité ${e.confidence}`}
+                        </div>
+                        {b.done > 0 && (
+                            <div className="text-xs" style={{ color: C.tealText }}>
+                                ✅ {b.good}/{b.done} ({pct(b.good, b.done)}) · 🎯 {b.exact}/{b.done} ({pct(b.exact, b.done)})
                             </div>
-                        </div>
-                        <div className="bilan-display font-semibold text-right" style={{ whiteSpace: "nowrap" }}>
-                            {e.predictedScore || "?"} → {e.actualScore || "à venir"} {statusOf(e)}
-                        </div>
+                        )}
                     </div>
-                ))}
-            </div>
+                    <div className="flex flex-col gap-2">{b.entries.map(entryRow)}</div>
+                </div>
+            ))}
 
             {/* Signalements des visiteurs */}
             <div className="bilan-display mt-8 mb-2 text-sm font-semibold uppercase" style={{ letterSpacing: "0.15em", color: C.aqua }}>

@@ -113,6 +113,13 @@ const STYLE = `
 @media (prefers-reduced-motion: reduce) {
     .paul-root * { animation: none !important; transition-duration: 0.05s !important; }
 }
+
+/* Sur mobile, le FAB 🛟 est plus petit et le bouton GO garde ses distances
+   pour qu'ils ne se chevauchent jamais (le report ne bloque plus le clic GO). */
+@media (max-width: 640px) {
+    .paul-fab { width: 60px !important; height: 60px !important; font-size: 30px !important; }
+    .paul-go-main { padding-left: 28px !important; padding-right: 28px !important; }
+}
 `;
 
 // Positions du poulpe dans le bassin (en %)
@@ -129,8 +136,10 @@ const OUTCOME_LABEL = {
     draw: () => "Match nul",
 };
 
-function todayLabel() {
-    return new Date().toLocaleDateString("fr-FR", {
+// Date affichée dans le header : suit la journée choisie (0 = aujourd'hui,
+// 1 = demain…) pour que l'onglet "Demain" n'affiche plus la date du jour.
+function dayLabel(offset = 0) {
+    return new Date(Date.now() + offset * 24 * 3600 * 1000).toLocaleDateString("fr-FR", {
         weekday: "long",
         day: "numeric",
         month: "long",
@@ -450,7 +459,7 @@ function OracleTank({ match, onBack }) {
     const probs = a?.probabilities || {};
 
     return (
-        <div className="paul-fadeup mx-auto w-full max-w-2xl px-4 pb-12">
+        <div className="paul-fadeup mx-auto w-full max-w-2xl px-4 pb-28">
             <button
                 onClick={onBack}
                 className="paul-display mb-4 text-sm"
@@ -591,7 +600,7 @@ function OracleTank({ match, onBack }) {
                     <button
                         onClick={launch}
                         disabled={phase !== "idle"}
-                        className="paul-go paul-display rounded-full px-12 py-4 text-2xl font-bold"
+                        className="paul-go paul-go-main paul-display rounded-full px-12 py-4 text-2xl font-bold"
                         style={{
                             color: C.abyss,
                             background: `linear-gradient(135deg, ${C.gold}, ${C.coral})`,
@@ -965,7 +974,7 @@ export default function ClaudeLePoulpe() {
                     L'oracle du Mondial 2026
                 </div>
                 <div className="mt-2 text-sm capitalize" style={{ color: C.tealText }}>
-                    {todayLabel()}
+                    {dayLabel(dayOffset)}
                 </div>
             </header>
 
