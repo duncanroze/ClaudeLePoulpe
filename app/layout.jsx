@@ -1,5 +1,4 @@
 import "./globals.css";
-import { Analytics } from "@vercel/analytics/next";
 
 export const metadata = {
     title: "Claude le Poulpe — L'Oracle du Mondial 2026",
@@ -17,10 +16,7 @@ export const viewport = {
 export default function RootLayout({ children }) {
     return (
         <html lang="fr">
-            <body style={{ margin: 0, background: "#04222e" }}>
-                {children}
-                <Analytics />
-            </body>
+            <body style={{ margin: 0, background: "#04222e" }}>{children}</body>
         </html>
     );
 }
