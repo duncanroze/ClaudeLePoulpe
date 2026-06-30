@@ -50,6 +50,14 @@ function outcomeOf(score) {
     return h > a ? "home" : h < a ? "away" : "draw";
 }
 
+// Issue (1/N/2) réellement prédite : on se base d'abord sur le score affiché
+// (la source de vérité visible : "1-1" est un nul), avec repli sur le champ
+// prediction si aucun score n'a été stocké. Évite l'incohérence où prediction
+// vaut "home" alors que le score pronostiqué est un nul (0-0, 3-3…).
+function predictedOutcomeOf(entry) {
+    return outcomeOf(entry.predictedScore) || entry.prediction || null;
+}
+
 const OUTCOME_SHORT = { home: "1", draw: "N", away: "2" };
 
 async function api(path, pass, options = {}) {
@@ -154,8 +162,12 @@ export default function Bilan() {
     const [checking, setChecking] = useState(false);
     const [predicting, setPredicting] = useState(false);
     const [notice, setNotice] = useState(null);
+    const [collapsed, setCollapsed] = useState({});
 
     const [reports, setReports] = useState([]);
+
+    const toggleBucket = (key) =>
+        setCollapsed((c) => ({ ...c, [key]: !c[key] }));
 
     const refresh = async (p) => {
         const [s, predictions, rep] = await Promise.all([
@@ -239,14 +251,14 @@ export default function Bilan() {
 
     // Stats dérivées du journal
     const played = entries.filter((e) => e.actualScore);
-    const goodOutcome = played.filter((e) => outcomeOf(e.actualScore) === e.prediction);
+    const goodOutcome = played.filter((e) => outcomeOf(e.actualScore) === predictedOutcomeOf(e));
     const exactScore = played.filter((e) => e.actualScore === e.predictedScore);
     const pct = (a, b) => (b > 0 ? `${Math.round((a / b) * 100)} %` : "—");
 
     const statusOf = (e) => {
         if (!e.actualScore) return "⏳";
         if (e.actualScore === e.predictedScore) return "🎯";
-        return outcomeOf(e.actualScore) === e.prediction ? "✅" : "❌";
+        return outcomeOf(e.actualScore) === predictedOutcomeOf(e) ? "✅" : "❌";
     };
 
     // Regroupement du journal par type de match : groupes A→L pour la phase
@@ -268,11 +280,12 @@ export default function Bilan() {
                 return {
                     ...b,
                     done: done.length,
-                    good: done.filter((e) => outcomeOf(e.actualScore) === e.prediction).length,
+                    good: done.filter((e) => outcomeOf(e.actualScore) === predictedOutcomeOf(e)).length,
                     exact: done.filter((e) => e.actualScore === e.predictedScore).length,
                 };
             })
-            .sort((a, b) => a.order - b.order);
+            // Derniers tours en haut (finale → … → groupe A) : tri décroissant.
+            .sort((a, b) => b.order - a.order);
     }, [entries]);
 
     const entryRow = (e) => (
@@ -506,24 +519,52 @@ export default function Bilan() {
                     automatiquement chaque jour (et quand les visiteurs lancent l'oracle).
                 </div>
             )}
-            {buckets.map((b) => (
-                <div key={b.key} className="mt-5">
-                    <div className="flex items-baseline justify-between flex-wrap gap-2 mb-2">
-                        <div className="bilan-display text-base font-bold" style={{ color: C.gold }}>
-                            {b.label}{" "}
-                            <span className="text-xs font-semibold" style={{ color: C.tealText }}>
-                                · {b.entries.length} prédiction{b.entries.length > 1 ? "s" : ""}
-                            </span>
-                        </div>
-                        {b.done > 0 && (
-                            <div className="text-xs" style={{ color: C.tealText }}>
-                                ✅ {b.good}/{b.done} ({pct(b.good, b.done)}) · 🎯 {b.exact}/{b.done} ({pct(b.exact, b.done)})
+            {buckets.map((b) => {
+                const isOpen = !collapsed[b.key];
+                return (
+                    <div key={b.key} className="mt-5">
+                        <div
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => toggleBucket(b.key)}
+                            onKeyDown={(ev) => {
+                                if (ev.key === "Enter" || ev.key === " ") {
+                                    ev.preventDefault();
+                                    toggleBucket(b.key);
+                                }
+                            }}
+                            aria-expanded={isOpen}
+                            className="flex w-full items-baseline justify-between flex-wrap gap-2 mb-2 text-left"
+                            style={{ cursor: "pointer", userSelect: "none" }}
+                        >
+                            <div className="bilan-display text-base font-bold" style={{ color: C.gold }}>
+                                <span
+                                    className="mr-1 inline-block text-xs"
+                                    style={{
+                                        color: C.tealText,
+                                        transform: isOpen ? "rotate(90deg)" : "rotate(0deg)",
+                                        transition: "transform 0.15s ease",
+                                    }}
+                                >
+                                    ▶
+                                </span>
+                                {b.label}{" "}
+                                <span className="text-xs font-semibold" style={{ color: C.tealText }}>
+                                    · {b.entries.length} prédiction{b.entries.length > 1 ? "s" : ""}
+                                </span>
                             </div>
+                            {b.done > 0 && (
+                                <div className="text-xs" style={{ color: C.tealText }}>
+                                    ✅ {b.good}/{b.done} ({pct(b.good, b.done)}) · 🎯 {b.exact}/{b.done} ({pct(b.exact, b.done)})
+                                </div>
+                            )}
+                        </div>
+                        {isOpen && (
+                            <div className="flex flex-col gap-2">{b.entries.map(entryRow)}</div>
                         )}
                     </div>
-                    <div className="flex flex-col gap-2">{b.entries.map(entryRow)}</div>
-                </div>
-            ))}
+                );
+            })}
 
             {/* Signalements des visiteurs */}
             <div className="bilan-display mt-8 mb-2 text-sm font-semibold uppercase" style={{ letterSpacing: "0.15em", color: C.aqua }}>
