@@ -162,12 +162,15 @@ export default function Bilan() {
     const [checking, setChecking] = useState(false);
     const [predicting, setPredicting] = useState(false);
     const [notice, setNotice] = useState(null);
-    const [collapsed, setCollapsed] = useState({});
+    // openMap : surcharges explicites d'ouverture par groupe (clé → bool).
+    // Par défaut seul le premier groupe (en haut) est déplié, les autres pliés.
+    const [openMap, setOpenMap] = useState({});
+    const [goOpen, setGoOpen] = useState(false); // « GO par match » plié par défaut
 
     const [reports, setReports] = useState([]);
 
-    const toggleBucket = (key) =>
-        setCollapsed((c) => ({ ...c, [key]: !c[key] }));
+    const toggleBucket = (key, currentlyOpen) =>
+        setOpenMap((m) => ({ ...m, [key]: !currentlyOpen }));
 
     const refresh = async (p) => {
         const [s, predictions, rep] = await Promise.all([
@@ -434,21 +437,43 @@ export default function Bilan() {
             {stats?.byMatch?.length > 0 && (
                 <div className="mt-3 p-4" style={card}>
                     <div
-                        className="bilan-display mb-2 text-xs font-semibold uppercase"
-                        style={{ letterSpacing: "0.1em", color: C.tealText }}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setGoOpen((v) => !v)}
+                        onKeyDown={(ev) => {
+                            if (ev.key === "Enter" || ev.key === " ") {
+                                ev.preventDefault();
+                                setGoOpen((v) => !v);
+                            }
+                        }}
+                        aria-expanded={goOpen}
+                        className="bilan-display text-xs font-semibold uppercase flex items-center gap-1"
+                        style={{ letterSpacing: "0.1em", color: C.tealText, cursor: "pointer", userSelect: "none" }}
                     >
-                        🔮 GO par match
+                        <span
+                            className="inline-block"
+                            style={{
+                                transform: goOpen ? "rotate(90deg)" : "rotate(0deg)",
+                                transition: "transform 0.15s ease",
+                            }}
+                        >
+                            ▶
+                        </span>
+                        🔮 GO par match{" "}
+                        <span style={{ color: "rgba(190,235,228,0.5)" }}>· {stats.byMatch.length}</span>
                     </div>
-                    <div className="flex flex-col gap-1">
-                        {stats.byMatch.map((m) => (
-                            <div key={m.label} className="flex items-center justify-between text-sm">
-                                <span className="bilan-display">{m.label}</span>
-                                <span className="bilan-display font-bold" style={{ color: C.gold }}>
-                                    {m.count}
-                                </span>
-                            </div>
-                        ))}
-                    </div>
+                    {goOpen && (
+                        <div className="mt-2 flex flex-col gap-1">
+                            {stats.byMatch.map((m) => (
+                                <div key={m.label} className="flex items-center justify-between text-sm">
+                                    <span className="bilan-display">{m.label}</span>
+                                    <span className="bilan-display font-bold" style={{ color: C.gold }}>
+                                        {m.count}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -519,18 +544,20 @@ export default function Bilan() {
                     automatiquement chaque jour (et quand les visiteurs lancent l'oracle).
                 </div>
             )}
-            {buckets.map((b) => {
-                const isOpen = !collapsed[b.key];
+            {buckets.map((b, i) => {
+                // Défaut : seul le premier groupe (en haut) est ouvert ;
+                // une fois cliqué, openMap garde le choix de l'utilisateur.
+                const isOpen = openMap[b.key] ?? i === 0;
                 return (
                     <div key={b.key} className="mt-5">
                         <div
                             role="button"
                             tabIndex={0}
-                            onClick={() => toggleBucket(b.key)}
+                            onClick={() => toggleBucket(b.key, isOpen)}
                             onKeyDown={(ev) => {
                                 if (ev.key === "Enter" || ev.key === " ") {
                                     ev.preventDefault();
-                                    toggleBucket(b.key);
+                                    toggleBucket(b.key, isOpen);
                                 }
                             }}
                             aria-expanded={isOpen}
