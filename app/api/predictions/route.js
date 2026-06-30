@@ -13,6 +13,7 @@ const rowToEntry = (r) => ({
     predictedScore: r.predicted_score,
     confidence: r.confidence,
     actualScore: r.actual_score,
+    actualPenalties: r.actual_penalties,
 });
 
 // GET → journal complet des prédictions (privé : mot de passe requis)
@@ -22,7 +23,8 @@ export async function GET(request) {
     }
     const rows = await sql`
         SELECT id, to_char(day, 'YYYY-MM-DD') AS day, home, away, match_time,
-               prediction, probabilities, predicted_score, confidence, actual_score
+               prediction, probabilities, predicted_score, confidence, actual_score,
+               actual_penalties
         FROM poulpe.predictions
         ORDER BY day DESC, created_at DESC`;
     return NextResponse.json({ entries: rows.map(rowToEntry) });

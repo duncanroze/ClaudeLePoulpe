@@ -315,7 +315,17 @@ export default function Bilan() {
                 </div>
             </div>
             <div className="bilan-display font-semibold text-right" style={{ whiteSpace: "nowrap" }}>
-                {e.predictedScore || "?"} → {e.actualScore || "à venir"} {statusOf(e)}
+                {e.predictedScore || "?"} → {e.actualScore || "à venir"}
+                {e.actualPenalties && (
+                    <span
+                        className="ml-1 text-xs font-bold"
+                        style={{ color: C.gold }}
+                        title="Vainqueur aux tirs au but"
+                    >
+                        (tab {e.actualPenalties})
+                    </span>
+                )}{" "}
+                {statusOf(e)}
             </div>
         </div>
     );

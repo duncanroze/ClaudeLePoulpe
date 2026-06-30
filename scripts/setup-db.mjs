@@ -39,6 +39,10 @@ await sql`
         created_at      timestamptz NOT NULL DEFAULT now(),
         updated_at      timestamptz NOT NULL DEFAULT now()
     )`;
+// Tirs au but des matchs à élimination directe (ex. "4-2", domicile-extérieur),
+// affichés tels quels à côté du score réglementaire. Colonne ajoutée après coup
+// → migration idempotente.
+await sql`ALTER TABLE poulpe.predictions ADD COLUMN IF NOT EXISTS actual_penalties text`;
 
 // Cache générique des réponses d'API externes (cotes, scores) :
 // un fetch sert tous les visiteurs pendant le TTL
