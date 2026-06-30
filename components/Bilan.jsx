@@ -161,6 +161,8 @@ export default function Bilan() {
     const [entries, setEntries] = useState([]);
     const [checking, setChecking] = useState(false);
     const [predicting, setPredicting] = useState(false);
+    const [dumping, setDumping] = useState(false);
+    const [fdDump, setFdDump] = useState(null);
     const [notice, setNotice] = useState(null);
     // openMap : surcharges explicites d'ouverture par groupe (clé → bool).
     // Par défaut seul le premier groupe (en haut) est déplié, les autres pliés.
@@ -225,6 +227,27 @@ export default function Bilan() {
             setNotice(`Erreur de vérification (${e.message || e})`);
         }
         setChecking(false);
+    };
+
+    // Diagnostic : dump brut de football-data.org pour réconcilier le classement.
+    const dumpFootballData = async () => {
+        setDumping(true);
+        setNotice(null);
+        try {
+            const r = await api("/api/fd-debug", pass);
+            setFdDump(r);
+            const warn =
+                r.tokenPresent === false
+                    ? " — ⚠️ TOKEN ABSENT côté serveur"
+                    : r.ok === false
+                      ? ` — ⚠️ erreur football-data (${r.status})`
+                      : "";
+            setNotice(`football-data : ${r.count ?? 0} match(s) récupéré(s)${warn}.`);
+        } catch (e) {
+            setFdDump(null);
+            setNotice(`Erreur diagnostic football-data (${e.message || e})`);
+        }
+        setDumping(false);
     };
 
     const predictNow = async () => {
@@ -541,11 +564,53 @@ export default function Bilan() {
                     >
                         {checking ? "Vérification…" : "🔍 Vérifier maintenant"}
                     </button>
+                    <button
+                        onClick={dumpFootballData}
+                        disabled={dumping}
+                        className="bilan-btn bilan-display rounded-full px-5 py-2 text-xs font-bold"
+                        style={{
+                            color: C.abyss,
+                            background: `linear-gradient(135deg, ${C.coral}, ${C.aqua})`,
+                            opacity: dumping ? 0.55 : 1,
+                        }}
+                    >
+                        {dumping ? "Lecture…" : "🛠️ Données football-data"}
+                    </button>
                 </div>
             </div>
             {notice && (
                 <div className="mt-2 text-sm" style={{ color: C.tealText }}>
                     {notice}
+                </div>
+            )}
+            {fdDump && (
+                <div className="mt-3 p-3" style={card}>
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold" style={{ color: C.aqua }}>
+                            Réponse brute football-data.org ({fdDump.count ?? 0} matchs) ·
+                            champ <code>stage</code>/<code>group</code> = vérité officielle,
+                            <code> appCategory</code> = notre classement
+                        </span>
+                        <button
+                            onClick={() => setFdDump(null)}
+                            className="bilan-btn text-xs font-bold"
+                            style={{ color: C.coral }}
+                        >
+                            ✕ fermer
+                        </button>
+                    </div>
+                    <pre
+                        className="text-xs"
+                        style={{
+                            maxHeight: 420,
+                            overflow: "auto",
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-word",
+                            color: C.tealText,
+                        }}
+                    >
+                        {JSON.stringify(fdDump, null, 2)}
+                    </pre>
                 </div>
             )}
             {entries.length === 0 && (
