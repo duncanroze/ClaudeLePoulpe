@@ -36,8 +36,8 @@ en phase à élimination directe (avant prolongation/tirs au but).
 
 ```bash
 pnpm install
-cp .env.example .env   # remplir DATABASE_URL + ODDS_API_KEY
-pnpm setup-db          # crée le schéma poulpe dans Neon
+cp .env.example .env   # remplir DATABASE_URL + ODDS_API_KEY (+ FOOTBALL_DATA_TOKEN, optionnel)
+pnpm setup-db          # crée/migre le schéma poulpe dans Neon
 pnpm dev
 ```
 
@@ -47,5 +47,6 @@ pnpm dev
 vercel link            # projet "claude-le-poulpe"
 vercel env add DATABASE_URL production
 vercel env add ODDS_API_KEY production
+vercel env add FOOTBALL_DATA_TOKEN production  # optionnel : pénos des matchs à élimination directe
 vercel --prod
 ```
