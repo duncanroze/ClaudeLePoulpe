@@ -17,12 +17,16 @@ export async function GET(request) {
             FROM poulpe.events
             GROUP BY 1, 2
             ORDER BY 1 DESC`,
+        // Tous les matchs "GO", pas seulement le top 50 : sinon un match lancé
+        // aujourd'hui (1 seul GO) tombe hors de la liste dès que 50 autres
+        // matchs ont plus de clics. Le Mondial ne compte qu'une centaine de
+        // matchs, la borne large sert juste de garde-fou.
         sql`SELECT label, count(*)::int AS count
             FROM poulpe.events
             WHERE type = 'go' AND label IS NOT NULL
             GROUP BY label
-            ORDER BY count DESC
-            LIMIT 50`,
+            ORDER BY count DESC, max(created_at) DESC
+            LIMIT 500`,
         budgetStatus(),
     ]);
     const counters = { opens: 0, goClicks: 0 };

@@ -112,37 +112,48 @@ function DailyChart({ daily }) {
     const max = Math.max(1, ...days.map((d) => Math.max(byDay.get(d).open, byDay.get(d).go)));
     return (
         <div className="p-4" style={card}>
-            <div className="flex items-end justify-around gap-1" style={{ height: 120 }}>
-                {days.map((d) => {
-                    const v = byDay.get(d);
-                    return (
-                        <div key={d} className="flex flex-col items-center gap-1" style={{ flex: 1 }}>
-                            <div className="flex items-end gap-1" style={{ height: 90 }}>
-                                <div
-                                    title={`${v.open} visite(s)`}
-                                    style={{
-                                        width: 10,
-                                        height: Math.max(3, (v.open / max) * 90),
-                                        background: C.aqua,
-                                        borderRadius: 3,
-                                    }}
-                                />
-                                <div
-                                    title={`${v.go} GO`}
-                                    style={{
-                                        width: 10,
-                                        height: Math.max(3, (v.go / max) * 90),
-                                        background: C.gold,
-                                        borderRadius: 3,
-                                    }}
-                                />
+            {/* Scroll horizontal interne : le graphe ne décale plus la page quand
+                les colonnes ne tiennent pas dans la largeur (mobile surtout). */}
+            <div style={{ overflowX: "auto", overflowY: "hidden" }}>
+                <div
+                    className="flex items-end gap-3"
+                    style={{ height: 120, minWidth: "100%", width: "max-content", margin: "0 auto" }}
+                >
+                    {days.map((d) => {
+                        const v = byDay.get(d);
+                        return (
+                            <div
+                                key={d}
+                                className="flex flex-col items-center gap-1"
+                                style={{ width: 34, flex: "0 0 auto" }}
+                            >
+                                <div className="flex items-end gap-1" style={{ height: 90 }}>
+                                    <div
+                                        title={`${v.open} visite(s)`}
+                                        style={{
+                                            width: 10,
+                                            height: Math.max(3, (v.open / max) * 90),
+                                            background: C.aqua,
+                                            borderRadius: 3,
+                                        }}
+                                    />
+                                    <div
+                                        title={`${v.go} GO`}
+                                        style={{
+                                            width: 10,
+                                            height: Math.max(3, (v.go / max) * 90),
+                                            background: C.gold,
+                                            borderRadius: 3,
+                                        }}
+                                    />
+                                </div>
+                                <div className="text-xs" style={{ color: C.tealText }}>
+                                    {d.slice(8, 10)}/{d.slice(5, 7)}
+                                </div>
                             </div>
-                            <div className="text-xs" style={{ color: C.tealText }}>
-                                {d.slice(8, 10)}/{d.slice(5, 7)}
-                            </div>
-                        </div>
-                    );
-                })}
+                        );
+                    })}
+                </div>
             </div>
             <div className="mt-3 flex justify-center gap-4 text-xs" style={{ color: C.tealText }}>
                 <span><span style={{ color: C.aqua }}>■</span> Visites</span>
